@@ -3,7 +3,7 @@
 Simosa (com.jazz.jazzworld) ships **four analytics/attribution SDKs, four ad SDKs, and two
 public-IP lookups** on top of its own Jazz API. Below is what was observed on device (v3.3.2) and
 what the patch neutralizes. After patching, the app makes network calls **only to its own Jazz
-backend** — every item below drops to zero (verified via logcat before/after).
+backend** — every item below drops to zero.
 
 ## Trackers (analytics & attribution)
 
