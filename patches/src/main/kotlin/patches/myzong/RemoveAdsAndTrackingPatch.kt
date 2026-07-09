@@ -23,6 +23,8 @@ private const val MOBILE_ADS = "Lcom/google/android/gms/ads/MobileAds;"
 private const val INIT_LISTENER = "Lcom/google/android/gms/ads/initialization/OnInitializationCompleteListener;"
 private const val APPSFLYER_LIB = "Lcom/appsflyer/AppsFlyerLib;"
 private const val AF_LISTENER = "Lcom/appsflyer/attribution/AppsFlyerRequestListener;"
+private const val AF_CONVERSION_LISTENER = "Lcom/appsflyer/AppsFlyerConversionListener;"
+private const val TTCONFIG = "Lcom/tiktok/TikTokBusinessSdk\$TTConfig;"
 private const val FB_SDK = "Lcom/facebook/FacebookSdk;"
 private const val TIKTOK = "Lcom/tiktok/TikTokBusinessSdk;"
 private const val VERIDIUM_GA = "Lcom/veridiumid/sdk/analytics/AnalyticsGoogle;"
@@ -32,6 +34,13 @@ internal val firebaseLogEventFingerprint = Fingerprint(
     returnType = "V",
     parameters = listOf("Ljava/lang/String;", "Landroid/os/Bundle;"),
     custom = { m, c -> c.type == FIREBASE_ANALYTICS && m.name == "logEvent" },
+)
+// init sets the dev key + conversion listener; no-op it (return the receiver — init returns `this`)
+// so the whole AppsFlyer SDK never starts, not just its send path.
+internal val appsflyerInitFingerprint = Fingerprint(
+    returnType = APPSFLYER_LIB,
+    parameters = listOf("Ljava/lang/String;", AF_CONVERSION_LISTENER, "Landroid/content/Context;"),
+    custom = { m, c -> c.superclass == APPSFLYER_LIB && m.name == "init" },
 )
 internal val appsflyerStartCtxFingerprint = Fingerprint(
     returnType = "V",
@@ -87,6 +96,17 @@ internal val tiktokIdentifyFingerprint = Fingerprint(
     returnType = "V",
     parameters = listOf("Ljava/lang/String;", "Ljava/lang/String;", "Ljava/lang/String;", "Ljava/lang/String;"),
     custom = { m, c -> c.type == TIKTOK && m.name == "identify" },
+)
+// no-op TikTok SDK init + its track-flush loop so the SDK never starts, not just per-event track.
+internal val tiktokInitializeSdkFingerprint = Fingerprint(
+    returnType = "V",
+    parameters = listOf(TTCONFIG),
+    custom = { m, c -> c.type == TIKTOK && m.name == "initializeSdk" },
+)
+internal val tiktokStartTrackFingerprint = Fingerprint(
+    returnType = "V",
+    parameters = listOf(),
+    custom = { m, c -> c.type == TIKTOK && m.name == "startTrack" },
 )
 // Veridium biometric SDK ships its OWN Google Analytics tracker and exfils via these.
 internal val veridiumGaSendFingerprint = Fingerprint(
@@ -169,8 +189,9 @@ private val disableAutoCollectionResourcePatch = resourcePatch(
 val removeAdsAndTrackingPatch = bytecodePatch(
     name = "Remove ads & tracking",
     description = "Removes every ad (AdMob) and every tracker (Firebase Analytics, AppsFlyer, " +
-        "Facebook, TikTok, and the Veridium SDK's own Google Analytics) — event sends, SDK init, " +
-        "and auto-collection. Pushwoosh push is left intact. The app then phones home only to its own Zong API.",
+        "Facebook, TikTok, and the Veridium SDK's own Google Analytics) — event sends, full SDK init " +
+        "(AppsFlyer init, TikTok initializeSdk/startTrack, MobileAds.initialize), and auto-collection. " +
+        "Pushwoosh push is left intact. The app then phones home only to its own Zong API.",
 ) {
     compatibleWith(COMPATIBILITY_MYZONG)
     dependsOn(disableAutoCollectionResourcePatch)
@@ -202,6 +223,8 @@ val removeAdsAndTrackingPatch = bytecodePatch(
             tiktokTrackEventFingerprint,
             tiktokTrackEventPropsFingerprint,
             tiktokIdentifyFingerprint,
+            tiktokInitializeSdkFingerprint,
+            tiktokStartTrackFingerprint,
             veridiumGaSendFingerprint,
             veridiumGaLogDataFingerprint,
             veridiumGaLogStringFingerprint,
@@ -214,5 +237,8 @@ val removeAdsAndTrackingPatch = bytecodePatch(
             facebookAutoLogGetterFingerprint,
             facebookAdIdGetterFingerprint,
         ).forEach { stub(it, returnFalse) }
+
+        // AppsFlyer init returns the receiver (`this`) — return it untouched so the SDK never initializes.
+        stub(appsflyerInitFingerprint, "return-object p0")
     }
 }
