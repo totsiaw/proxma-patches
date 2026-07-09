@@ -1,0 +1,242 @@
+{
+  "NOTE": "Do NOT manually edit this file. This file is automatically updated when semantic release (release.yml) runs. Manually editing this file can break your releases and break third party tools that use this file.",
+  "version": "1.10.0",
+  "patches": [
+    {
+      "name": "Block ad & tracking network requests",
+      "description": "Stops all ad-SDK network activity (Google Ad Manager + the AppLovin/AnyMind/Prebid mediation it drives) and the app's api.ipify.org public-IP fetch. No ads, no ad/IP telemetry.",
+      "default": true,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "com.jazz.jazzworld",
+          "name": "Simosa",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#FF6B35",
+          "signatures": [],
+          "targets": [
+            {
+              "version": "3.3.2",
+              "versionCodes": null,
+              "isExperimental": false,
+              "minSdk": 23,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
+      "name": "Bypass signature verification",
+      "description": "Disables Simosa's anti-tamper signature check so a re-signed APK launches normally instead of stalling on the splash / \"version is not correct\" dialog.",
+      "default": true,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "com.jazz.jazzworld",
+          "name": "Simosa",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#FF6B35",
+          "signatures": [],
+          "targets": [
+            {
+              "version": "3.3.2",
+              "versionCodes": null,
+              "isExperimental": false,
+              "minSdk": 23,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
+      "name": "Dump API plaintext to logcat",
+      "description": "Re-enables Simosa's disabled logger so decrypted API request/response bodies print to logcat. For security testing only.",
+      "default": false,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "com.jazz.jazzworld",
+          "name": "Simosa",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#FF6B35",
+          "signatures": [],
+          "targets": [
+            {
+              "version": "3.3.2",
+              "versionCodes": null,
+              "isExperimental": false,
+              "minSdk": 23,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
+      "name": "Dump request sign input",
+      "description": "Logs the plaintext sign input (json+salt+timeStamp) of every signed API request to logcat (tag PROXMA_SIGN). For security testing only.",
+      "default": false,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "com.jazz.jazzworld",
+          "name": "Simosa",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#FF6B35",
+          "signatures": [],
+          "targets": [
+            {
+              "version": "3.3.2",
+              "versionCodes": null,
+              "isExperimental": false,
+              "minSdk": 23,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
+      "name": "Enable HTTPS interception (Burp/mitm)",
+      "description": "Trusts user-installed CA certificates so a proxy like Burp Suite can intercept HTTPS traffic. For security testing only — leave off for normal use.",
+      "default": false,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "com.jazz.jazzworld",
+          "name": "Simosa",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#FF6B35",
+          "signatures": [],
+          "targets": [
+            {
+              "version": "3.3.2",
+              "versionCodes": null,
+              "isExperimental": false,
+              "minSdk": 23,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
+      "name": "Remove analytics tracking",
+      "description": "Stops all analytics/attribution telemetry (Mixpanel, Firebase, Facebook, AppsFlyer) — app events, network sends, and SDK auto-collection — so no tracking data or PII leaves the device.",
+      "default": true,
+      "dependencies": [
+        "ResourcePatch"
+      ],
+      "compatiblePackages": [
+        {
+          "packageName": "com.jazz.jazzworld",
+          "name": "Simosa",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#FF6B35",
+          "signatures": [],
+          "targets": [
+            {
+              "version": "3.3.2",
+              "versionCodes": null,
+              "isExperimental": false,
+              "minSdk": 23,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
+      "name": "Remove daily reward ads",
+      "description": "Skips the ad shown before granting daily-reward MBs.",
+      "default": true,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "com.jazz.jazzworld",
+          "name": "Simosa",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#FF6B35",
+          "signatures": [],
+          "targets": [
+            {
+              "version": "3.3.2",
+              "versionCodes": null,
+              "isExperimental": false,
+              "minSdk": 23,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
+      "name": "Remove daily reward banner ad",
+      "description": "Removes the Google Ad Manager banner (MREC) on the Daily Reward screen by returning an empty, un-loaded ad view — nothing renders and no ad request is made.",
+      "default": true,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "com.jazz.jazzworld",
+          "name": "Simosa",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#FF6B35",
+          "signatures": [],
+          "targets": [
+            {
+              "version": "3.3.2",
+              "versionCodes": null,
+              "isExperimental": false,
+              "minSdk": 23,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
+      "name": "Remove interstitial ads",
+      "description": "Suppresses every Google Ad Manager interstitial (Dashboard, Radio, Daily Reward) by forcing the app's ad-holder accessors to report no loaded ad.",
+      "default": true,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "com.jazz.jazzworld",
+          "name": "Simosa",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#FF6B35",
+          "signatures": [],
+          "targets": [
+            {
+              "version": "3.3.2",
+              "versionCodes": null,
+              "isExperimental": false,
+              "minSdk": 23,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    }
+  ]
+}
