@@ -4,6 +4,8 @@ Morphe patch bundle for Simosa (com.jazz.jazzworld).
 
 Add in Morphe Manager: https://morphe.software/add-source?github=totsiaw/proxma-patches
 
+See [**WHAT_IT_REMOVES.md**](WHAT_IT_REMOVES.md) for the trackers, ad SDKs, and public-IP lookups this strips.
+
 
 ## Patches
 
