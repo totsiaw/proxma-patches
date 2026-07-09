@@ -21,6 +21,14 @@ import org.w3c.dom.Element
 private const val FIREBASE_ANALYTICS = "Lcom/google/firebase/analytics/FirebaseAnalytics;"
 private const val MOBILE_ADS = "Lcom/google/android/gms/ads/MobileAds;"
 private const val INIT_LISTENER = "Lcom/google/android/gms/ads/initialization/OnInitializationCompleteListener;"
+private const val INTERSTITIAL_AD = "Lcom/google/android/gms/ads/interstitial/InterstitialAd;"
+private const val AD_MANAGER_INTERSTITIAL = "Lcom/google/android/gms/ads/admanager/AdManagerInterstitialAd;"
+private const val BASE_AD_VIEW = "Lcom/google/android/gms/ads/BaseAdView;"
+private const val AD_MANAGER_AD_VIEW = "Lcom/google/android/gms/ads/admanager/AdManagerAdView;"
+private const val AD_LOADER = "Lcom/google/android/gms/ads/AdLoader;"
+private const val REWARDED_AD = "Lcom/google/android/gms/ads/rewarded/RewardedAd;"
+private const val AD_REQUEST = "Lcom/google/android/gms/ads/AdRequest;"
+private const val ADM_AD_REQUEST = "Lcom/google/android/gms/ads/admanager/AdManagerAdRequest;"
 private const val APPSFLYER_LIB = "Lcom/appsflyer/AppsFlyerLib;"
 private const val AF_LISTENER = "Lcom/appsflyer/attribution/AppsFlyerRequestListener;"
 private const val AF_CONVERSION_LISTENER = "Lcom/appsflyer/AppsFlyerConversionListener;"
@@ -135,6 +143,53 @@ internal val mobileAdsInitListenerFingerprint = Fingerprint(
     parameters = listOf("Landroid/content/Context;", INIT_LISTENER),
     custom = { m, c -> c.type == MOBILE_ADS && m.name == "initialize" },
 )
+// GMA auto-inits via MobileAdsInitProvider (manifest ContentProvider), bypassing the initialize()
+// stub, so we also stub every ad-load entry point — no ad content ever fetches.
+internal val interstitialLoadFingerprint = Fingerprint(
+    returnType = "V",
+    parameters = listOf("Landroid/content/Context;", "Ljava/lang/String;", AD_REQUEST, "Lcom/google/android/gms/ads/interstitial/InterstitialAdLoadCallback;"),
+    custom = { m, c -> c.type == INTERSTITIAL_AD && m.name == "load" },
+)
+internal val adManagerInterstitialLoadFingerprint = Fingerprint(
+    returnType = "V",
+    parameters = listOf("Landroid/content/Context;", "Ljava/lang/String;", ADM_AD_REQUEST, "Lcom/google/android/gms/ads/admanager/AdManagerInterstitialAdLoadCallback;"),
+    custom = { m, c -> c.type == AD_MANAGER_INTERSTITIAL && m.name == "load" },
+)
+internal val baseAdViewLoadFingerprint = Fingerprint(
+    returnType = "V",
+    parameters = listOf(AD_REQUEST),
+    custom = { m, c -> c.type == BASE_AD_VIEW && m.name == "loadAd" },
+)
+internal val adManagerAdViewLoadFingerprint = Fingerprint(
+    returnType = "V",
+    parameters = listOf(ADM_AD_REQUEST),
+    custom = { m, c -> c.type == AD_MANAGER_AD_VIEW && m.name == "loadAd" },
+)
+internal val adLoaderLoadAdFingerprint = Fingerprint(
+    returnType = "V",
+    parameters = listOf(AD_REQUEST),
+    custom = { m, c -> c.type == AD_LOADER && m.name == "loadAd" },
+)
+internal val adLoaderLoadAdmFingerprint = Fingerprint(
+    returnType = "V",
+    parameters = listOf(ADM_AD_REQUEST),
+    custom = { m, c -> c.type == AD_LOADER && m.name == "loadAd" },
+)
+internal val adLoaderLoadAdsFingerprint = Fingerprint(
+    returnType = "V",
+    parameters = listOf(AD_REQUEST, "I"),
+    custom = { m, c -> c.type == AD_LOADER && m.name == "loadAds" },
+)
+internal val rewardedLoadFingerprint = Fingerprint(
+    returnType = "V",
+    parameters = listOf("Landroid/content/Context;", "Ljava/lang/String;", AD_REQUEST, "Lcom/google/android/gms/ads/rewarded/RewardedAdLoadCallback;"),
+    custom = { m, c -> c.type == REWARDED_AD && m.name == "load" },
+)
+internal val rewardedLoadAdmFingerprint = Fingerprint(
+    returnType = "V",
+    parameters = listOf("Landroid/content/Context;", "Ljava/lang/String;", ADM_AD_REQUEST, "Lcom/google/android/gms/ads/rewarded/RewardedAdLoadCallback;"),
+    custom = { m, c -> c.type == REWARDED_AD && m.name == "load" },
+)
 
 /**
  * Kills auto-collection (which no code stub can reach) via manifest meta-data: Firebase
@@ -181,6 +236,16 @@ private val disableAutoCollectionResourcePatch = resourcePatch(
                 "google_analytics_default_allow_ad_user_data" to "false",
                 "google_analytics_default_allow_ad_personalization_signals" to "false",
             ).forEach { (name, value) -> setFlag(name, value) }
+
+            // GMA auto-inits via this ContentProvider regardless of the MobileAds.initialize stub —
+            // disable it so the SDK never eagerly starts (no sdk-core/doubleclick fetch on launch).
+            val providers = doc.getElementsByTagName("provider")
+            for (i in 0 until providers.length) {
+                val el = providers.item(i) as Element
+                if (el.getAttribute("android:name") == "com.google.android.gms.ads.MobileAdsInitProvider") {
+                    el.setAttribute("android:enabled", "false")
+                }
+            }
         }
     }
 }
@@ -230,6 +295,15 @@ val removeAdsAndTrackingPatch = bytecodePatch(
             veridiumGaLogStringFingerprint,
             mobileAdsInitFingerprint,
             mobileAdsInitListenerFingerprint,
+            interstitialLoadFingerprint,
+            adManagerInterstitialLoadFingerprint,
+            baseAdViewLoadFingerprint,
+            adManagerAdViewLoadFingerprint,
+            adLoaderLoadAdFingerprint,
+            adLoaderLoadAdmFingerprint,
+            adLoaderLoadAdsFingerprint,
+            rewardedLoadFingerprint,
+            rewardedLoadAdmFingerprint,
         ).forEach { stub(it, "return-void") }
 
         // return false: Facebook auto-collection getters
