@@ -1,7 +1,7 @@
 {
-  "created_at": "2026-07-09T18:02:16",
-  "description": "## [1.2.0](https://github.com/totsiaw/proxma-patches/compare/1.1.0...1.2.0) (2026-07-09)\n\n### New Features\n\n* MyZong — stub AppsFlyer/TikTok SDK init too ([7e17a9c](https://github.com/totsiaw/proxma-patches/commit/7e17a9cd9b60c3af0d52f55ef08a5fb588512015))",
-  "download_url": "https://github.com/totsiaw/proxma-patches/releases/download/1.2.0/patches-1.2.0.mpp",
+  "created_at": "2026-07-09T18:14:02",
+  "description": "## [1.2.1](https://github.com/totsiaw/proxma-patches/compare/1.2.0...1.2.1) (2026-07-09)\n\n### Bug Fixes\n\n* MyZong — fully kill AdMob (auto-init provider + all ad loads) ([5a092ad](https://github.com/totsiaw/proxma-patches/commit/5a092adb888015fb92d01e1cce1318387481f3fe))",
+  "download_url": "https://github.com/totsiaw/proxma-patches/releases/download/1.2.1/patches-1.2.1.mpp",
   "signature_download_url": "",
-  "version": "1.2.0"
+  "version": "1.2.1"
 }
