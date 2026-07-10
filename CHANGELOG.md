@@ -1,3 +1,9 @@
+## [1.2.2](https://github.com/totsiaw/proxma-patches/compare/1.2.1...1.2.2) (2026-07-10)
+
+### Bug Fixes
+
+* MyZong — stub AppOpenAd (launch ad slipped past v1.2.1) ([a4113dc](https://github.com/totsiaw/proxma-patches/commit/a4113dce237c55d202b2c785b568ea9fa147a882))
+
 ## [1.2.1](https://github.com/totsiaw/proxma-patches/compare/1.2.0...1.2.1) (2026-07-09)
 
 ### Bug Fixes

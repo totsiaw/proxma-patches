@@ -1,7 +1,7 @@
 {
-  "created_at": "2026-07-09T18:14:02",
-  "description": "## [1.2.1](https://github.com/totsiaw/proxma-patches/compare/1.2.0...1.2.1) (2026-07-09)\n\n### Bug Fixes\n\n* MyZong — fully kill AdMob (auto-init provider + all ad loads) ([5a092ad](https://github.com/totsiaw/proxma-patches/commit/5a092adb888015fb92d01e1cce1318387481f3fe))",
-  "download_url": "https://github.com/totsiaw/proxma-patches/releases/download/1.2.1/patches-1.2.1.mpp",
+  "created_at": "2026-07-10T06:46:05",
+  "description": "## [1.2.2](https://github.com/totsiaw/proxma-patches/compare/1.2.1...1.2.2) (2026-07-10)\n\n### Bug Fixes\n\n* MyZong — stub AppOpenAd (launch ad slipped past v1.2.1) ([a4113dc](https://github.com/totsiaw/proxma-patches/commit/a4113dce237c55d202b2c785b568ea9fa147a882))",
+  "download_url": "https://github.com/totsiaw/proxma-patches/releases/download/1.2.2/patches-1.2.2.mpp",
   "signature_download_url": "",
-  "version": "1.2.1"
+  "version": "1.2.2"
 }
