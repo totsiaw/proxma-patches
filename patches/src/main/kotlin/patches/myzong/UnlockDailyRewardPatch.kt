@@ -3,29 +3,51 @@ package patches.myzong
 import app.morphe.patcher.Fingerprint
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.patch.bytecodePatch
+import com.android.tools.smali.dexlib2.AccessFlags
+import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
+import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
+import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 
 /*
- * Claim the MyZong daily "watch ad to claim" reward without watching the ad.
+ * Claim MyZong's daily "watch ad to claim" reward with no popup and no ad.
  *
- * The reward (DailyRewards "Free Mode" bubble game) is gated by a rewarded / rewarded-interstitial
- * ad in com.zong.customercare.admob.AdmobRewardedInterKt. Its show methods take the on-reward
- * callback as a Function0 and — importantly — the app ALREADY invokes that callback directly (no ad)
- * when there's no internet:
+ * The reward-bubble tap is decided in one private helper in FragDailyRewards' click-listener class
+ * (private static final (FragDailyRewards)V). After a 1000ms debounce it computes
+ * areEqual(activeGameNo, "1") and branches on `if-eqz`:
+ *   - result true  -> access$showAdAlert  (the "Enjoy your free daily reward after this short Ad" popup
+ *                     -> rewarded-interstitial ad -> claim)
+ *   - result false -> access$claimReward  (the app's OWN direct claim: POST /api/v2/rewards/claimdailyreward,
+ *                     no popup, no ad)
+ * The claim is granted client-side (not server-verified against the ad), so we force that comparison to
+ * false — every tap takes the existing direct-claim branch. One instruction, upstream of both the popup
+ * and the ad, reusing the app's genuine claim accessor (identical to what the post-ad callback calls).
  *
- *     :goto_0                                   // isInternetAvailable == false
- *     invoke-interface {p1}, Function0;->invoke()   // grant reward
- *     return-void
+ * Verified (workflow, 3 adversarial lenses): the helper has exactly one caller (the bubble-tap lambda),
+ * touches no shared dialog/ad component, and reaches the real claim network call.
  *
- * i.e. the claim is granted client-side, not server-verified against the ad. This patch makes
- * showRewardedAd / showRewardedInterstitial always take that path: invoke the reward callback
- * immediately and return, so the reward is claimed with no ad shown.
- *
- * Method names survive R8 (the class is obfuscated, the methods are not), so we anchor on the name +
- * (Activity, Function0) signature. Both are static: p0 = Activity, p1 = Function0.
+ * Names are R8-obfuscated per build, so we anchor on structure: private/static/final, returns V, one
+ * (FragDailyRewards) param, and the debounce (SystemClock.elapsedRealtime) + Intrinsics.areEqual it
+ * contains — then inject `const/4 v<reg>, 0x0` right after the areEqual move-result.
  */
 
 private const val FUNCTION0 = "Lkotlin/jvm/functions/Function0;"
+private const val FRAG_DAILY_REWARDS = "Lcom/zong/customercare/view/ui/FragDailyRewards;"
 
+// The bubble-tap decision helper (ad-popup vs direct-claim).
+internal val dailyRewardBubbleTapFingerprint = Fingerprint(
+    accessFlags = listOf(AccessFlags.PRIVATE, AccessFlags.STATIC, AccessFlags.FINAL),
+    returnType = "V",
+    parameters = listOf(FRAG_DAILY_REWARDS),
+    custom = { m, _ ->
+        val ins = m.implementation?.instructions?.toList() ?: return@custom false
+        fun calls(name: String) = ins.any {
+            it is ReferenceInstruction && (it.reference as? MethodReference)?.name == name
+        }
+        calls("elapsedRealtime") && calls("areEqual")
+    },
+)
+
+// Any rewarded ad's show wrapper (AdmobRewardedInterKt) — used by other placements (e.g. home).
 internal val showRewardedInterstitialFingerprint = Fingerprint(
     returnType = "V",
     parameters = listOf("Landroid/app/Activity;", FUNCTION0),
@@ -40,28 +62,44 @@ internal val showRewardedAdFingerprint = Fingerprint(
 @Suppress("unused")
 val unlockDailyRewardPatch = bytecodePatch(
     name = "Unlock daily reward (skip ad)",
-    description = "Claim MyZong's daily 'watch ad to claim' reward without watching the ad. Forces the " +
-        "rewarded-ad show methods to invoke the reward callback immediately — the same no-ad path the " +
-        "app already uses when offline — so the reward is granted with no ad shown.",
+    description = "Claim MyZong's daily reward with no 'watch ad' popup and no ad. Forces the reward-bubble " +
+        "tap to take the app's own direct-claim branch (the same claim call the post-ad path makes), " +
+        "upstream of both the popup and the rewarded ad.",
 ) {
     compatibleWith(COMPATIBILITY_MYZONG)
 
     execute {
-        // Invoke the on-reward Function0 (p1) straight away and return — grant, no ad.
+        // Primary fix: force areEqual(activeGameNo,"1") result to 0 so the existing `if-eqz` always
+        // branches to the direct-claim path — no popup, no ad, genuine claim.
+        try {
+            val method = dailyRewardBubbleTapFingerprint.method
+            val insns = method.implementation!!.instructions.toList()
+            val eqIdx = insns.indexOfFirst {
+                it is ReferenceInstruction && (it.reference as? MethodReference)?.name == "areEqual"
+            }
+            val moveResult = insns.getOrNull(eqIdx + 1)
+            // ponytail: result reg is inside .locals 6 (v0-v5) so const/4 encodes it; if a future build
+            // spills it above v15, switch this to const/16.
+            if (eqIdx >= 0 && moveResult is OneRegisterInstruction) {
+                method.addInstructions(eqIdx + 2, "const/4 v${moveResult.registerA}, 0x0")
+            }
+        } catch (_: Exception) {
+            // fingerprint didn't resolve — skip
+        }
+
+        // Secondary: make any other rewarded-ad placement grant immediately (invoke its on-reward
+        // Function0, no ad). The daily-reward direct-claim path above never reaches these.
         val grantAndReturn = """
             invoke-interface { p1 }, $FUNCTION0->invoke()Ljava/lang/Object;
             return-void
         """.trimIndent()
-
-        fun stub(fingerprint: Fingerprint) {
+        fun stubShow(fp: Fingerprint) {
             try {
-                fingerprint.method.addInstructions(0, grantAndReturn)
+                fp.method.addInstructions(0, grantAndReturn)
             } catch (_: Exception) {
-                // method absent in this build — skip
             }
         }
-
-        stub(showRewardedInterstitialFingerprint)
-        stub(showRewardedAdFingerprint)
+        stubShow(showRewardedInterstitialFingerprint)
+        stubShow(showRewardedAdFingerprint)
     }
 }
