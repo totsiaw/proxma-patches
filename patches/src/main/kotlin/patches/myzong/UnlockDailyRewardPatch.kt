@@ -39,11 +39,10 @@ internal val dailyRewardBubbleTapFingerprint = Fingerprint(
     returnType = "V",
     parameters = listOf(FRAG_DAILY_REWARDS),
     custom = { m, _ ->
-        val ins = m.implementation?.instructions?.toList() ?: return@custom false
-        fun calls(name: String) = ins.any {
-            it is ReferenceInstruction && (it.reference as? MethodReference)?.name == name
-        }
-        calls("elapsedRealtime") && calls("areEqual")
+        val calledNames = m.implementation?.instructions?.toList().orEmpty()
+            .mapNotNull { (it as? ReferenceInstruction)?.reference as? MethodReference }
+            .map { it.name }
+        "elapsedRealtime" in calledNames && "areEqual" in calledNames
     },
 )
 
@@ -90,7 +89,7 @@ val unlockDailyRewardPatch = bytecodePatch(
         // Secondary: make any other rewarded-ad placement grant immediately (invoke its on-reward
         // Function0, no ad). The daily-reward direct-claim path above never reaches these.
         val grantAndReturn = """
-            invoke-interface { p1 }, $FUNCTION0->invoke()Ljava/lang/Object;
+            invoke-interface {p1}, $FUNCTION0->invoke()Ljava/lang/Object;
             return-void
         """.trimIndent()
         fun stubShow(fp: Fingerprint) {
