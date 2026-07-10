@@ -27,6 +27,8 @@ private const val BASE_AD_VIEW = "Lcom/google/android/gms/ads/BaseAdView;"
 private const val AD_MANAGER_AD_VIEW = "Lcom/google/android/gms/ads/admanager/AdManagerAdView;"
 private const val AD_LOADER = "Lcom/google/android/gms/ads/AdLoader;"
 private const val REWARDED_AD = "Lcom/google/android/gms/ads/rewarded/RewardedAd;"
+private const val APP_OPEN_AD = "Lcom/google/android/gms/ads/appopen/AppOpenAd;"
+private const val APP_OPEN_CALLBACK = "Lcom/google/android/gms/ads/appopen/AppOpenAd\$AppOpenAdLoadCallback;"
 private const val AD_REQUEST = "Lcom/google/android/gms/ads/AdRequest;"
 private const val ADM_AD_REQUEST = "Lcom/google/android/gms/ads/admanager/AdManagerAdRequest;"
 private const val APPSFLYER_LIB = "Lcom/appsflyer/AppsFlyerLib;"
@@ -190,6 +192,22 @@ internal val rewardedLoadAdmFingerprint = Fingerprint(
     parameters = listOf("Landroid/content/Context;", "Ljava/lang/String;", ADM_AD_REQUEST, "Lcom/google/android/gms/ads/rewarded/RewardedAdLoadCallback;"),
     custom = { m, c -> c.type == REWARDED_AD && m.name == "load" },
 )
+// App Open ad (shown at launch) — 3 load overloads, all unstubbed until now.
+internal val appOpenLoadDeprFingerprint = Fingerprint(
+    returnType = "V",
+    parameters = listOf("Landroid/content/Context;", "Ljava/lang/String;", AD_REQUEST, "I", APP_OPEN_CALLBACK),
+    custom = { m, c -> c.type == APP_OPEN_AD && m.name == "load" },
+)
+internal val appOpenLoadFingerprint = Fingerprint(
+    returnType = "V",
+    parameters = listOf("Landroid/content/Context;", "Ljava/lang/String;", AD_REQUEST, APP_OPEN_CALLBACK),
+    custom = { m, c -> c.type == APP_OPEN_AD && m.name == "load" },
+)
+internal val appOpenLoadAdmFingerprint = Fingerprint(
+    returnType = "V",
+    parameters = listOf("Landroid/content/Context;", "Ljava/lang/String;", ADM_AD_REQUEST, "I", APP_OPEN_CALLBACK),
+    custom = { m, c -> c.type == APP_OPEN_AD && m.name == "load" },
+)
 
 /**
  * Kills auto-collection (which no code stub can reach) via manifest meta-data: Firebase
@@ -304,6 +322,9 @@ val removeAdsAndTrackingPatch = bytecodePatch(
             adLoaderLoadAdsFingerprint,
             rewardedLoadFingerprint,
             rewardedLoadAdmFingerprint,
+            appOpenLoadDeprFingerprint,
+            appOpenLoadFingerprint,
+            appOpenLoadAdmFingerprint,
         ).forEach { stub(it, "return-void") }
 
         // return false: Facebook auto-collection getters
