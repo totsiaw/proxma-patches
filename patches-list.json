@@ -1,6 +1,6 @@
 {
   "NOTE": "Do NOT manually edit this file. This file is automatically updated when semantic release (release.yml) runs. Manually editing this file can break your releases and break third party tools that use this file.",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "patches": [
     {
       "name": "Bypass signature verification",
@@ -86,7 +86,7 @@
     },
     {
       "name": "Unlock daily reward (skip ad)",
-      "description": "Claim MyZong's daily 'watch ad to claim' reward without watching the ad. Forces the rewarded-ad show methods to invoke the reward callback immediately — the same no-ad path the app already uses when offline — so the reward is granted with no ad shown.",
+      "description": "Claim MyZong's daily reward with no 'watch ad' popup and no ad. Forces the reward-bubble tap to take the app's own direct-claim branch (the same claim call the post-ad path makes), upstream of both the popup and the rewarded ad.",
       "default": true,
       "dependencies": [],
       "compatiblePackages": [

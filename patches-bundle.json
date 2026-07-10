@@ -1,7 +1,7 @@
 {
-  "created_at": "2026-07-10T07:00:57",
-  "description": "## [1.3.0](https://github.com/totsiaw/proxma-patches/compare/1.2.2...1.3.0) (2026-07-10)\n\n### New Features\n\n* MyZong — unlock daily reward without watching ad ([1bae4e5](https://github.com/totsiaw/proxma-patches/commit/1bae4e5ede5bbc2bd029b2d23108114b06bbeda9))",
-  "download_url": "https://github.com/totsiaw/proxma-patches/releases/download/1.3.0/patches-1.3.0.mpp",
+  "created_at": "2026-07-10T07:35:05",
+  "description": "## [1.3.1](https://github.com/totsiaw/proxma-patches/compare/1.3.0...1.3.1) (2026-07-10)\n\n### Bug Fixes\n\n* compile errors in unlock-daily-reward patch ([4628acc](https://github.com/totsiaw/proxma-patches/commit/4628acc9000d94f0bff8eb5180e0cff94723fcc0))\n* MyZong daily reward — remove the popup too, claim directly ([578ef3d](https://github.com/totsiaw/proxma-patches/commit/578ef3d820c6375847ef48ee57eb21002be68362))",
+  "download_url": "https://github.com/totsiaw/proxma-patches/releases/download/1.3.1/patches-1.3.1.mpp",
   "signature_download_url": "",
-  "version": "1.3.0"
+  "version": "1.3.1"
 }
