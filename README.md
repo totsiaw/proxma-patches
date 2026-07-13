@@ -18,6 +18,15 @@ Morphe patch bundle for **Simosa** (`com.jazz.jazzworld`) and **MyZong** (`com.z
 
 ## Patches
 
+### Investify (`com.blueinklabs.investifystocks.free`)
+
+_Supported version(s): 5.6.0_
+
+| Patch | Description |
+|-------|-------------|
+| **Bypass PairIP license check** | Disables Google PairIP's license/installer check (com.pairip.licensecheck) so a re-signed build runs on a real device instead of being redirected to the Play Store and killed. No-ops the LicenseContentProvider entry point and LicenseClient.initializeLicenseCheck(). |
+| **Unlock premium (remove ads)** | Unlocks Investify premium — forces the backend `no_ads` entitlement getter to report true in both the model and its Realm proxy, so the app treats the account as ad-free without any purchase. Ad SDK loads are gated on this flag app-wide. |
+
 ### Simosa (`com.jazz.jazzworld`)
 
 _Supported version(s): 3.3.2_
@@ -43,3 +52,11 @@ _Supported version(s): 9.36.2_
 | Patch | Description |
 |-------|-------------|
 | **Remove analytics & tracking (WIP)** | ⚠️ WORK IN PROGRESS — not yet fully verified on-device; use at your own risk. No-ops the analytics/ad/fingerprint egress in Daraz — Alibaba UserTrack clickstream, AUDID/UTDID fingerprint upload, Behavix behavior collection, Meta/Facebook App Events + GAID, Firebase Analytics, Zalo device-tracking, Motu crash/APM, and the UCWeb webview telemetry uploaders — plus manifest auto-collection flags. Login, push (ACCS/FCM), eKYC and the app's own commerce API are left intact. Known gaps: Firebase Analytics runs inside Google Play Services (relies on the manifest flag, not a code stub), residual native UCWeb telemetry needs a DNS/host block, and the split-APK install is still being validated. |
+
+### NetMonster (`cz.mroczis.netmonster`)
+
+_Supported version(s): 3.4.1_
+
+| Patch | Description |
+|-------|-------------|
+| **Unlock premium (NetMonster)** | Unlocks NetMonster Premium — forces the premium repo's derived flows so real-time LTE/NR-NSA location calculation is unlocked, ads are removed, and the status shows Active (far-future expiry) without an Adapty subscription. |
