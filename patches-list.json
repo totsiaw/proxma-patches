@@ -1,7 +1,33 @@
 {
   "NOTE": "Do NOT manually edit this file. This file is automatically updated when semantic release (release.yml) runs. Manually editing this file can break your releases and break third party tools that use this file.",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "patches": [
+    {
+      "name": "Bypass PairIP license check",
+      "description": "Disables Google PairIP's license/installer check (com.pairip.licensecheck) so a re-signed build runs on a real device instead of being redirected to the Play Store and killed. No-ops the LicenseContentProvider entry point and LicenseClient.initializeLicenseCheck().",
+      "default": true,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "com.blueinklabs.investifystocks.free",
+          "name": "Investify",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#1E88E5",
+          "signatures": [],
+          "targets": [
+            {
+              "version": "5.6.0",
+              "versionCodes": null,
+              "isExperimental": false,
+              "minSdk": 24,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
     {
       "name": "Bypass signature verification",
       "description": "Disables Simosa's anti-tamper signature check so a re-signed APK launches normally instead of stalling on the splash / \"version is not correct\" dialog.",
@@ -131,6 +157,60 @@
               "versionCodes": null,
               "isExperimental": false,
               "minSdk": 21,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
+      "name": "Unlock premium (NetMonster)",
+      "description": "Unlocks NetMonster Premium — forces the premium repo's derived flows so real-time LTE/NR-NSA location calculation is unlocked, ads are removed, and the status shows Active (far-future expiry) without an Adapty subscription.",
+      "default": true,
+      "dependencies": [
+        "ResourcePatch"
+      ],
+      "compatiblePackages": [
+        {
+          "packageName": "cz.mroczis.netmonster",
+          "name": "NetMonster",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#00BCD4",
+          "signatures": [],
+          "targets": [
+            {
+              "version": "3.4.1",
+              "versionCodes": null,
+              "isExperimental": false,
+              "minSdk": 26,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
+      "name": "Unlock premium (remove ads)",
+      "description": "Unlocks Investify premium — forces the backend `no_ads` entitlement getter to report true in both the model and its Realm proxy, so the app treats the account as ad-free without any purchase. Ad SDK loads are gated on this flag app-wide.",
+      "default": true,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "com.blueinklabs.investifystocks.free",
+          "name": "Investify",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#1E88E5",
+          "signatures": [],
+          "targets": [
+            {
+              "version": "5.6.0",
+              "versionCodes": null,
+              "isExperimental": false,
+              "minSdk": 24,
               "description": null
             }
           ]
