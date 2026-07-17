@@ -18,6 +18,16 @@ Morphe patch bundle for **Simosa** (`com.jazz.jazzworld`) and **MyZong** (`com.z
 
 ## Patches
 
+### My Telenor (`com.telenor.pakistan.mytelenor`)
+
+_Supported version(s): 4.2.62_
+
+| Patch | Description |
+|-------|-------------|
+| **Block trackers** | Stops the Insider, TikTok Business SDK and Mixpanel Session Replay trackers from initializing (event/attribution/session-replay tracking never starts). Leaves AWS Amplify, Firebase core/RemoteConfig/FCM and Google Ads init untouched so app data, push and the remote ad-config the ads patch relies on keep working. |
+| **Block trackers (manifest flags)** | Disables Firebase Analytics + Google advertiser-id auto-collection and the Facebook SDK's auto app-events / advertiser-id / auto-init via AndroidManifest <meta-data> flags — the SDK-side auto-collection that no bytecode init-stub can reach. Leaves Firebase core (FCM push, RemoteConfig) and the Facebook ContentProvider intact. Separate from the bytecode Block trackers patch so you can pick either or both. |
+| **Remove ads** | Removes every Google Ad Manager ad (banners + interstitials) across Daily Rewards, Home, Test Your Skills and Explore by nulling the remote ad-config chokepoint, so each surface renders its no-ads layout and never requests an interstitial. |
+
 ### Investify (`com.blueinklabs.investifystocks.free`)
 
 _Supported version(s): 5.6.0_
