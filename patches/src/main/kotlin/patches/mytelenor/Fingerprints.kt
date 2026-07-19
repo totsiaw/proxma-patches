@@ -112,3 +112,37 @@ internal val mixpanelInitFingerprint = Fingerprint(
         string("Failed to initialize Mixpanel SDK"),
     ),
 )
+
+// ---------------------------------------------------------------------------------------------------
+// Device-validation gate (bypassDeviceValidationPatch).
+// ---------------------------------------------------------------------------------------------------
+
+/**
+ * Device-validation FAIL callback — obfuscated `Lgq/e$a$a;->a(Ljava/lang/String;)V`
+ * (`smali/classes5/gq/e$a$a.smali`), the SOLE implementer of the check-callback interface `Ls50/d$b;`.
+ *
+ * The app runs a client-side anti-tamper/anti-root/anti-emulator/anti-Frida/anti-Xposed battery
+ * (~16 checks in package `s50/`, `AbstractC19758d.a`), driven by ViewModel `gq/e`. On a re-signed /
+ * patched build one of those checks trips post-login and this callback fires: it posts TRUE to the
+ * FAIL LiveData (`gq/e;->c()`), whose 4 UI observers show the base64-hidden "Device validation failed"
+ * toast (resource `promotion_validation_error`) and call `finishAffinity()`, killing the app. The
+ * sibling `b()V` on the same class is the PASS path.
+ *
+ * Name-agnostic anchoring: the class (`gq/e$a$a`), ViewModel (`gq/e`) and both callback method names
+ * are r8-obfuscated and change across versions. Stable anchors used here:
+ *   - the Kotlin `checkNotNullParameter` null-check string literal "failedCheck" (the FAIL callback's
+ *     `String` parameter name; unique in the whole APK — only this one smali file contains it), and
+ *   - the failure dispatch itself: `MutableLiveData.postValue(...)`.
+ * Combined with the method shape (public, returns V, single `String` param) this matches exactly the
+ * one FAIL callback. The obfuscated identifiers are never referenced; the patch resolves the sibling
+ * PASS method from the matched method's own defining class at patch time.
+ */
+internal val deviceValidationFailFingerprint = Fingerprint(
+    returnType = "V",
+    accessFlags = listOf(AccessFlags.PUBLIC),
+    parameters = listOf("Ljava/lang/String;"),
+    filters = listOf(
+        string("failedCheck"),
+        methodCall(definingClass = "Landroidx/lifecycle/MutableLiveData;", name = "postValue"),
+    ),
+)
