@@ -1,6 +1,6 @@
 {
   "NOTE": "Do NOT manually edit this file. This file is automatically updated when semantic release (release.yml) runs. Manually editing this file can break your releases and break third party tools that use this file.",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "patches": [
     {
       "name": "Block trackers",
@@ -70,6 +70,32 @@
           "targets": [
             {
               "version": "5.6.0",
+              "versionCodes": null,
+              "isExperimental": false,
+              "minSdk": 24,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
+      "name": "Bypass device validation",
+      "description": "Neutralizes the client-side device-validation gate (anti-root / anti-emulator / anti-Frida / anti-Xposed / anti-tamper battery) that shows a \"Device validation failed\" toast and kills the app via finishAffinity() on a rooted, emulated or re-signed build. Redirects the single failure callback to the success path so all ~16 checks report as passed and the app keeps running pre- and post-login.",
+      "default": true,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "com.telenor.pakistan.mytelenor",
+          "name": "My Telenor",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#00A8E0",
+          "signatures": [],
+          "targets": [
+            {
+              "version": "4.2.62",
               "versionCodes": null,
               "isExperimental": false,
               "minSdk": 24,
