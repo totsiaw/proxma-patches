@@ -1,3 +1,9 @@
+## [1.7.0](https://github.com/totsiaw/proxma-patches/compare/1.6.0...1.7.0) (2026-07-19)
+
+### New Features
+
+* add mytelenor Bypass device validation patch ([7d9a1a7](https://github.com/totsiaw/proxma-patches/commit/7d9a1a76c66a1bc436a9998ea3f18d5d1cb52b39))
+
 ## [1.6.0](https://github.com/totsiaw/proxma-patches/compare/1.5.1...1.6.0) (2026-07-17)
 
 ### New Features
