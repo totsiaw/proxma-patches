@@ -1,3 +1,9 @@
+## [1.8.0](https://github.com/totsiaw/proxma-patches/compare/1.7.0...1.8.0) (2026-07-19)
+
+### New Features
+
+* add mtproxy Remove ads patch ([a35a449](https://github.com/totsiaw/proxma-patches/commit/a35a449731fad72f7e7634cced08c7164fb631a9))
+
 ## [1.7.0](https://github.com/totsiaw/proxma-patches/compare/1.6.0...1.7.0) (2026-07-19)
 
 ### New Features
