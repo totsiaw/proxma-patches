@@ -43,6 +43,14 @@ _Supported version(s): 3.3.2_
 | **Bypass signature verification** | Disables Simosa's anti-tamper signature check so a re-signed APK launches normally instead of stalling on the splash / "version is not correct" dialog. |
 | **Remove ads & tracking** | Removes every ad (interstitial, banner, daily-reward) and every tracker (Mixpanel, Firebase, Facebook, AppsFlyer) — app events, network sends, ad-SDK requests (Google Ads / AppLovin / AnyMind / Prebid), SDK auto-collection, and the ipify IP leak. The app then phones home only to its own Jazz API. |
 
+### MTProxy (`com.sdev.mtproxy`)
+
+_Supported version(s): 2.1.4_
+
+| Patch | Description |
+|-------|-------------|
+| **Remove ads** | Removes every AdMob ad — the interstitial (rerouted to its onAdFailedToLoad branch so the proxy-apply action still runs, but no ad loads or shows) and the on-screen banner (load skipped). No feature is lost. |
+
 ### MyZong (`com.zong.customercare`)
 
 _Supported version(s): 5.19.19.112_
