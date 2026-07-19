@@ -1,6 +1,6 @@
 # Proxma Patches
 
-Morphe patch bundle for **Simosa** (`com.jazz.jazzworld`) and **MyZong** (`com.zong.customercare`).
+Morphe patch bundle for **My Telenor**, **Investify**, **Simosa** (Jazz), **MyZong** (Zong), and **NetMonster**. See [Patches](#patches) below for the current list of apps, supported versions, and what each patch does.
 
 ## How to use
 
@@ -10,10 +10,6 @@ Morphe patch bundle for **Simosa** (`com.jazz.jazzworld`) and **MyZong** (`com.z
 3. Pick your app, select the patches you want, tap **Patch**, then install the result.
 
 > Patches target a specific app version (below). If your installed app is a different version, it won't match until that version is added.
-
-**Details:**
-- Simosa — [WHAT_IT_REMOVES.md](WHAT_IT_REMOVES.md)
-- MyZong — [WHAT_IT_REMOVES_MYZONG.md](WHAT_IT_REMOVES_MYZONG.md)
 
 
 ## Patches
