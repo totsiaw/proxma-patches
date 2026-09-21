@@ -80,28 +80,17 @@ _Supported version(s): 3.4.1_
 
 ## Troubleshooting
 
-### Patched app crashes on launch with `ClassNotFoundException` (large apps, e.g. Jazz World / Simosa)
+### App crashes / won't open right after patching (e.g. Jazz World)
 
-Symptom: right after patching, the app crashes with
-`java.lang.ClassNotFoundException: Didn't find class "...Application"` — even though the class is present in the APK.
+This is a known **Morphe Manager** bug with large apps: picking **too many patches at once** can produce a build that won't launch.
 
-Cause: **Morphe Manager runs the patcher on-device (Android ART), and its build output is defective for large multi-dex apps** (Jazz World is ~181 MB / 9 DEX). Once the number of modified classes crosses a threshold, Manager's dex writer emits an extra **empty/duplicate DEX** (`class_defs=0`) alongside the real one; Android's runtime then rejects the dex set, so the DEX holding the app's `Application` class never loads. This is [morphe-manager#616](https://github.com/MorpheApp/morphe-manager/issues/616) — and it happens in **Fast (STRIP_FAST) too**, not only FULL.
+**Fix: select fewer patches.**
 
-Verified it is the *build*, not the device or install: the same Manager-built DEX files installed manually via `adb` still crash, while the identical patches built with the **desktop CLI** (patcher on a normal JVM) run fine on the same phone.
+For **Jazz World (Simosa)** in Morphe Manager, tick only:
 
-**Fixes, most reliable first:**
+- ✅ Bypass signature verification
+- ✅ Remove ads & tracking
 
-1. **Patch with the morphe-desktop CLI** — it builds a clean single patched DEX, no empty duplicate:
-   ```
-   java -jar morphe-desktop-<ver>-all.jar patch      --patches proxma-patches.mpp -e "Bypass signature verification" -e "Remove ads & tracking"      -i com.jazz.jazzworld.apk
-   ```
-2. **In Morphe Manager, enable fewer patches** so the modified-class count stays under the threshold (see the Simosa note below). Keep **Bytecode mode = Fast**; avoid **FULL**.
+Leave **❌ Remove daily check-in ads** unticked — adding it is what triggers the crash. You still get every ad removed except the one on the daily check-in screen.
 
-### Simosa (Jazz World) in Morphe Manager
-
-Jazz World is one of those large apps. Because of the bug above, in **Morphe Manager** enable only:
-
-- ✅ **Bypass signature verification**
-- ✅ **Remove ads & tracking**
-
-and leave **❌ Remove daily check-in ads** OFF — that extra patch pushes the build past the threshold that triggers #616 and crashes the app. Enable **Remove daily check-in ads** only when patching with the **morphe-desktop CLI** (which is not affected). The two-patch selection covers every ad except the daily check-in one.
+Want that last ad gone too? Patch on a computer with the **Morphe desktop app** instead — it isn't affected by this bug.
