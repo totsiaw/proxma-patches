@@ -1,6 +1,6 @@
 {
   "NOTE": "Do NOT manually edit this file. This file is automatically updated when semantic release (release.yml) runs. Manually editing this file can break your releases and break third party tools that use this file.",
-  "version": "1.11.0",
+  "version": "1.12.0",
   "patches": [
     {
       "name": "Block trackers",
@@ -266,11 +266,37 @@
     },
     {
       "name": "Remove ads & tracking",
-      "description": "Removes every ad (interstitial, banner, daily-reward, daily check-in / SocialPlus feed) and every tracker (Mixpanel, Firebase, Facebook, AppsFlyer) — app events, network sends, ad-SDK requests (Google Ads / AppLovin / AnyMind / Prebid), SDK auto-collection, and the ipify IP leak. The app then phones home only to its own Jazz API.",
+      "description": "Removes every ad (interstitial, banner, daily-reward) and every tracker (Mixpanel, Firebase, Facebook, AppsFlyer) — app events, network sends, ad-SDK requests (Google Ads / AppLovin / AnyMind / Prebid), SDK auto-collection, and the ipify IP leak. The app then phones home only to its own Jazz API.",
       "default": true,
       "dependencies": [
         "ResourcePatch"
       ],
+      "compatiblePackages": [
+        {
+          "packageName": "com.jazz.jazzworld",
+          "name": "Simosa",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#FF6B35",
+          "signatures": [],
+          "targets": [
+            {
+              "version": "3.3.4.2",
+              "versionCodes": null,
+              "isExperimental": false,
+              "minSdk": 23,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
+      "name": "Remove daily check-in ads",
+      "description": "Removes the SocialPlus daily check-in / in-feed ads (FeedAdsManager banner + native loaders). Separate from \"Remove ads & tracking\" to keep that patch Morphe-Manager-safe; enable this one when patching with the desktop CLI.",
+      "default": true,
+      "dependencies": [],
       "compatiblePackages": [
         {
           "packageName": "com.jazz.jazzworld",
