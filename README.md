@@ -97,3 +97,12 @@ Cause: **Morphe Manager runs the patcher on-device (Android ART), and its build 
    - Fast/STRIP_SAFE only recompile the modified classes; avoid **FULL** (bug #616). If Manager still crashes the app after raising memory, use the CLI (option 1).
 
 Small/simple apps patch fine in Manager; this only affects very large multi-dex targets.
+
+### Simosa (Jazz World) in Morphe Manager
+
+Jazz World is one of those large apps. Because of the bug above, in **Morphe Manager** enable only:
+
+- ✅ **Bypass signature verification**
+- ✅ **Remove ads & tracking**
+
+and leave **❌ Remove daily check-in ads** OFF — that extra patch pushes the build past the threshold that triggers [morphe-manager#616](https://github.com/MorpheApp/morphe-manager/issues/616) and crashes the app. Enable **Remove daily check-in ads** only when patching with the **morphe-desktop CLI** (which is not affected). The two-patch selection covers every ad except the daily check-in one.
