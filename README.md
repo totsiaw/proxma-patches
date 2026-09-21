@@ -1,6 +1,6 @@
 # Proxma Patches
 
-Morphe patch bundle for **My Telenor**, **Investify**, **Simosa** (Jazz), **MyZong** (Zong), and **NetMonster**. See [Patches](#patches) below for the current list of apps, supported versions, and what each patch does.
+Morphe patch bundle for **My Telenor**, **Investify**, **Simosa** (Jazz), **OLX**, **MTProxy**, **MyZong** (Zong), and **NetMonster**. See [Patches](#patches) below for the current list of apps, supported versions, and what each patch does.
 
 ## How to use
 
