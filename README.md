@@ -80,16 +80,28 @@ _Supported version(s): 3.4.1_
 
 ## Troubleshooting
 
-### Patched app crashes on launch with `ClassNotFoundException` (e.g. Jazz World / Simosa)
+### Patched app crashes on launch with `ClassNotFoundException` (large apps, e.g. Jazz World / Simosa)
 
-If a patched app crashes at startup with something like
-`java.lang.ClassNotFoundException: Didn't find class "...Application"` — even though the class is in the APK — the cause is the **Bytecode mode**, not the patch.
+Symptom: right after patching, the app crashes with
+`java.lang.ClassNotFoundException: Didn't find class "...Application"` — even though the class is present in the APK.
 
-Morphe Manager's **FULL** bytecode mode has a known bug on large multi-dex apps ([morphe-manager#616](https://github.com/MorpheApp/morphe-manager/issues/616)): near the 64K-per-DEX overflow boundary it emits duplicate/empty trailing DEX files, so a class can land in a DEX that never loads.
+Cause: **Morphe Manager runs the patcher on-device (Android ART), and its build output is defective for large multi-dex apps** (Jazz World is ~181 MB / 9 DEX). Once the number of modified classes crosses a threshold, Manager's dex writer emits an extra **empty/duplicate DEX** (`class_defs=0`) alongside the real one; Android's runtime then rejects the dex set, so the DEX holding the app's `Application` class never loads. This is [morphe-manager#616](https://github.com/MorpheApp/morphe-manager/issues/616) — and it happens in **Fast (STRIP_FAST) too**, not only FULL.
 
-**Fix — in Morphe Manager:**
-1. **Settings → Advanced → Patcher tuning → Bytecode mode**
-2. Choose **STRIP_FAST** (the default/recommended) — not **FULL**.
-3. Re-patch the app and install.
+Verified it is the *build*, not the device or install: the same Manager-built DEX files installed manually via `adb` still crash, while the identical patches built with the **desktop CLI** (patcher on a normal JVM) run fine on the same phone.
 
-`STRIP_FAST` and `STRIP_SAFE` only recompile the modified classes, so they don't hit this bug. The patches themselves need no change. (On the CLI, `STRIP_FAST` is already the default.)
+**Fixes, most reliable first:**
+
+1. **Patch with the morphe-desktop CLI** — it builds a clean single patched DEX, no empty duplicate:
+   ```
+   java -jar morphe-desktop-<ver>-all.jar patch      --patches proxma-patches.mpp -e "Bypass signature verification" -e "Remove ads & tracking"      -i com.jazz.jazzworld.apk
+   ```
+2. **In Morphe Manager, enable fewer patches** so the modified-class count stays under the threshold (see the Simosa note below). Keep **Bytecode mode = Fast**; avoid **FULL**.
+
+### Simosa (Jazz World) in Morphe Manager
+
+Jazz World is one of those large apps. Because of the bug above, in **Morphe Manager** enable only:
+
+- ✅ **Bypass signature verification**
+- ✅ **Remove ads & tracking**
+
+and leave **❌ Remove daily check-in ads** OFF — that extra patch pushes the build past the threshold that triggers #616 and crashes the app. Enable **Remove daily check-in ads** only when patching with the **morphe-desktop CLI** (which is not affected). The two-patch selection covers every ad except the daily check-in one.
