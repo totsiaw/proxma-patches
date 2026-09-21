@@ -1,3 +1,13 @@
+## [1.9.0](https://github.com/totsiaw/proxma-patches/compare/1.8.0...1.9.0) (2026-09-21)
+
+### Bug Fixes
+
+* **simosa:** target Simosa 3.3.4.2 ([0363c02](https://github.com/totsiaw/proxma-patches/commit/0363c026d685ecc5e2b333f4e5b4dd04325aa727))
+
+### New Features
+
+* **simosa:** remove daily check-in / SocialPlus feed ads ([0c962f7](https://github.com/totsiaw/proxma-patches/commit/0c962f7b8c38cdb1e80e147b3d87defe2a97fd21))
+
 ## [1.8.0](https://github.com/totsiaw/proxma-patches/compare/1.7.0...1.8.0) (2026-07-19)
 
 ### New Features
