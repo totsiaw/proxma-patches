@@ -1,3 +1,9 @@
+## [1.12.1](https://github.com/totsiaw/proxma-patches/compare/1.12.0...1.12.1) (2026-09-21)
+
+### Bug Fixes
+
+* **netmonster:** retarget Unlock premium for 3.4.3 ([8beed38](https://github.com/totsiaw/proxma-patches/commit/8beed389993f2760daa2d859564d119a74d54cd9))
+
 ## [1.12.0](https://github.com/totsiaw/proxma-patches/compare/1.11.0...1.12.0) (2026-09-21)
 
 ### New Features
