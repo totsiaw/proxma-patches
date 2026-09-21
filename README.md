@@ -79,16 +79,21 @@ _Supported version(s): 3.4.1_
 
 ## Troubleshooting
 
-### Patched app crashes on launch with `ClassNotFoundException` (e.g. Jazz World / Simosa)
+### Patched app crashes on launch with `ClassNotFoundException` (large apps, e.g. Jazz World / Simosa)
 
-If a patched app crashes at startup with something like
-`java.lang.ClassNotFoundException: Didn't find class "...Application"` — even though the class is in the APK — the cause is the **Bytecode mode**, not the patch.
+Symptom: right after patching, the app crashes with
+`java.lang.ClassNotFoundException: Didn't find class "...Application"` — even though the class is present in the APK.
 
-Morphe Manager's **FULL** bytecode mode has a known bug on large multi-dex apps ([morphe-manager#616](https://github.com/MorpheApp/morphe-manager/issues/616)): near the 64K-per-DEX overflow boundary it emits duplicate/empty trailing DEX files, so a class can land in a DEX that never loads.
+Cause: **Morphe Manager builds on-device inside a memory-limited process.** For large multi-dex apps (Jazz World is ~181 MB / 9 DEX), that constrained build can emit a DEX set that Android's runtime rejects at load, so the DEX holding the app's `Application` class never loads. This happens in **both** bytecode modes — it is **not** only the FULL-mode bug ([morphe-manager#616](https://github.com/MorpheApp/morphe-manager/issues/616), which is a separate FULL-only defect). Same patches built with the desktop CLI work fine, so the patches are not at fault.
 
-**Fix — in Morphe Manager:**
-1. **Settings → Advanced → Patcher tuning → Bytecode mode**
-2. Choose **STRIP_FAST** (the default/recommended) — not **FULL**.
-3. Re-patch the app and install.
+**Fixes, in order of reliability:**
 
-`STRIP_FAST` and `STRIP_SAFE` only recompile the modified classes, so they don't hit this bug. The patches themselves need no change. (On the CLI, `STRIP_FAST` is already the default.)
+1. **Patch with the morphe-desktop CLI (recommended for large apps).** It runs on a full JVM, so it builds a valid APK:
+   ```
+   java -jar morphe-desktop-<ver>-all.jar patch      --patches proxma-patches.mpp -e "Bypass signature verification" -e "Remove ads & tracking"      -i com.jazz.jazzworld.apk
+   ```
+2. **In Morphe Manager, raise the patcher memory limit and keep Fast mode:**
+   - Settings → Advanced → **Patcher tuning**: make sure **Bytecode mode = Fast (STRIP_FAST)** and **increase the process-runtime memory limit** (and keep the separate patch process enabled). Then re-patch.
+   - Fast/STRIP_SAFE only recompile the modified classes; avoid **FULL** (bug #616). If Manager still crashes the app after raising memory, use the CLI (option 1).
+
+Small/simple apps patch fine in Manager; this only affects very large multi-dex targets.
