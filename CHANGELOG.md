@@ -1,3 +1,9 @@
+## [1.11.0](https://github.com/totsiaw/proxma-patches/compare/1.10.0...1.11.0) (2026-09-21)
+
+### New Features
+
+* **olx:** add Remove ads patch ([02b00d9](https://github.com/totsiaw/proxma-patches/commit/02b00d968b6e0ec169bc1280775db9cc19a070d6))
+
 ## [1.10.0](https://github.com/totsiaw/proxma-patches/compare/1.9.0...1.10.0) (2026-09-21)
 
 ### New Features
