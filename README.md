@@ -36,12 +36,12 @@ _Supported version(s): 5.6.0_
 
 ### Simosa (`com.jazz.jazzworld`)
 
-_Supported version(s): 3.3.2_
+_Supported version(s): 3.3.4.2_
 
 | Patch | Description |
 |-------|-------------|
 | **Bypass signature verification** | Disables Simosa's anti-tamper signature check so a re-signed APK launches normally instead of stalling on the splash / "version is not correct" dialog. |
-| **Remove ads & tracking** | Removes every ad (interstitial, banner, daily-reward) and every tracker (Mixpanel, Firebase, Facebook, AppsFlyer) — app events, network sends, ad-SDK requests (Google Ads / AppLovin / AnyMind / Prebid), SDK auto-collection, and the ipify IP leak. The app then phones home only to its own Jazz API. |
+| **Remove ads & tracking** | Removes every ad (interstitial, banner, daily-reward, daily check-in / SocialPlus feed) and every tracker (Mixpanel, Firebase, Facebook, AppsFlyer) — app events, network sends, ad-SDK requests (Google Ads / AppLovin / AnyMind / Prebid), SDK auto-collection, and the ipify IP leak. The app then phones home only to its own Jazz API. |
 
 ### MTProxy (`com.sdev.mtproxy`)
 
