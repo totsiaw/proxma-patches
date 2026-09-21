@@ -84,7 +84,7 @@ _Supported version(s): 3.4.1_
 Symptom: right after patching, the app crashes with
 `java.lang.ClassNotFoundException: Didn't find class "...Application"` — even though the class is present in the APK.
 
-Cause: **Morphe Manager builds on-device inside a memory-limited process.** For large multi-dex apps (Jazz World is ~181 MB / 9 DEX), that constrained build can emit a DEX set that Android's runtime rejects at load, so the DEX holding the app's `Application` class never loads. This happens in **both** bytecode modes — it is **not** only the FULL-mode bug ([morphe-manager#616](https://github.com/MorpheApp/morphe-manager/issues/616), which is a separate FULL-only defect). Same patches built with the desktop CLI work fine, so the patches are not at fault.
+Cause: **Morphe Manager runs the patcher on-device (Android ART), and its build output is defective for large multi-dex apps** (Jazz World is ~181 MB / 9 DEX) — the compiled DEX holding the app's `Application` class fails to load. Verified it is the *build*, not the device or install: the same Manager-built DEX files, installed manually via `adb`, still crash; the identical patches built by the **desktop CLI** (patcher on a normal JVM) run fine on the same phone. It happens in **both** bytecode modes, so it is **not** only the FULL-mode bug ([morphe-manager#616](https://github.com/MorpheApp/morphe-manager/issues/616)); that is a related on-device dex-segmentation defect.
 
 **Fixes, in order of reliability:**
 
@@ -93,7 +93,7 @@ Cause: **Morphe Manager builds on-device inside a memory-limited process.** For 
    java -jar morphe-desktop-<ver>-all.jar patch      --patches proxma-patches.mpp -e "Bypass signature verification" -e "Remove ads & tracking"      -i com.jazz.jazzworld.apk
    ```
 2. **In Morphe Manager, raise the patcher memory limit and keep Fast mode:**
-   - Settings → Advanced → **Patcher tuning**: make sure **Bytecode mode = Fast (STRIP_FAST)** and **increase the process-runtime memory limit** (and keep the separate patch process enabled). Then re-patch.
+   - Settings → Advanced → **Patcher tuning**: keep **Bytecode mode = Fast (STRIP_FAST)**; you can also try raising the **patcher process memory limit** / toggling the separate patch process, then re-patch. (These sometimes help large apps, but are not guaranteed — the reliable fix is the CLI.)
    - Fast/STRIP_SAFE only recompile the modified classes; avoid **FULL** (bug #616). If Manager still crashes the app after raising memory, use the CLI (option 1).
 
 Small/simple apps patch fine in Manager; this only affects very large multi-dex targets.
