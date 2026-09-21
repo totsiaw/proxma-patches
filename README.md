@@ -76,3 +76,19 @@ _Supported version(s): 3.4.1_
 | Patch | Description |
 |-------|-------------|
 | **Unlock premium (NetMonster)** | Unlocks NetMonster Premium — forces the premium repo's derived flows so real-time LTE/NR-NSA location calculation is unlocked, ads are removed, and the status shows Active (far-future expiry) without an Adapty subscription. |
+
+## Troubleshooting
+
+### Patched app crashes on launch with `ClassNotFoundException` (e.g. Jazz World / Simosa)
+
+If a patched app crashes at startup with something like
+`java.lang.ClassNotFoundException: Didn't find class "...Application"` — even though the class is in the APK — the cause is the **Bytecode mode**, not the patch.
+
+Morphe Manager's **FULL** bytecode mode has a known bug on large multi-dex apps ([morphe-manager#616](https://github.com/MorpheApp/morphe-manager/issues/616)): near the 64K-per-DEX overflow boundary it emits duplicate/empty trailing DEX files, so a class can land in a DEX that never loads.
+
+**Fix — in Morphe Manager:**
+1. **Settings → Advanced → Patcher tuning → Bytecode mode**
+2. Choose **STRIP_FAST** (the default/recommended) — not **FULL**.
+3. Re-patch the app and install.
+
+`STRIP_FAST` and `STRIP_SAFE` only recompile the modified classes, so they don't hit this bug. The patches themselves need no change. (On the CLI, `STRIP_FAST` is already the default.)
