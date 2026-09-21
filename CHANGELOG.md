@@ -1,3 +1,9 @@
+## [1.12.0](https://github.com/totsiaw/proxma-patches/compare/1.11.0...1.12.0) (2026-09-21)
+
+### New Features
+
+* **simosa:** split check-in ad removal into its own patch ([2797106](https://github.com/totsiaw/proxma-patches/commit/27971066a76b9ee8693588a6da389fd9fcbbb43e)), closes [morphe-manager#616](https://github.com/totsiaw/morphe-manager/issues/616) [#616](https://github.com/totsiaw/proxma-patches/issues/616)
+
 ## [1.11.0](https://github.com/totsiaw/proxma-patches/compare/1.10.0...1.11.0) (2026-09-21)
 
 ### New Features
