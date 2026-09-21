@@ -72,7 +72,7 @@ _Supported version(s): 5.19.19.112_
 
 ### NetMonster (`cz.mroczis.netmonster`)
 
-_Supported version(s): 3.4.1_
+_Supported version(s): 3.4.3_
 
 | Patch | Description |
 |-------|-------------|
