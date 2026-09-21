@@ -1,3 +1,9 @@
+## [1.10.0](https://github.com/totsiaw/proxma-patches/compare/1.9.0...1.10.0) (2026-09-21)
+
+### New Features
+
+* **olx:** add Force dark mode patch ([5cf94c1](https://github.com/totsiaw/proxma-patches/commit/5cf94c1481102a5eeff72e8cc7a6d362d5edf6bf))
+
 ## [1.9.0](https://github.com/totsiaw/proxma-patches/compare/1.8.0...1.9.0) (2026-09-21)
 
 ### Bug Fixes

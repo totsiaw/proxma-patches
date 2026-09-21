@@ -43,6 +43,14 @@ _Supported version(s): 3.3.4.2_
 | **Bypass signature verification** | Disables Simosa's anti-tamper signature check so a re-signed APK launches normally instead of stalling on the splash / "version is not correct" dialog. |
 | **Remove ads & tracking** | Removes every ad (interstitial, banner, daily-reward, daily check-in / SocialPlus feed) and every tracker (Mixpanel, Firebase, Facebook, AppsFlyer) — app events, network sends, ad-SDK requests (Google Ads / AppLovin / AnyMind / Prebid), SDK auto-collection, and the ipify IP leak. The app then phones home only to its own Jazz API. |
 
+### OLX (`com.olx.pk`)
+
+_Supported version(s): 18.8.0_
+
+| Patch | Description |
+|-------|-------------|
+| **Force dark mode** | Forces OLX into dark (night) mode regardless of the system theme, using the app's built-in -night resources via UiModeManager.setApplicationNightMode at startup. |
+
 ### MTProxy (`com.sdev.mtproxy`)
 
 _Supported version(s): 2.1.4_
