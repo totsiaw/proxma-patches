@@ -27,6 +27,7 @@ private const val APPSFLYER_LIB = "Lcom/appsflyer/AppsFlyerLib;"
 private const val PREBID = "Lorg/prebid/mobile/PrebidMobile;"
 private const val PREBID_SDK_INIT = "Lorg/prebid/mobile/rendering/sdk/SdkInitializer;"
 private const val PREBID_LISTENER = "Lorg/prebid/mobile/rendering/listeners/SdkInitializationListener;"
+private const val SOCIALPLUS_FEED_ADS_MANAGER = "Lcom/jazz/socialplus/core/ads/FeedAdsManager;"
 
 // ---------------- ADS (show side) ----------------
 // Interstitial holders b5.a / b5.b: the show sites null-check d(), so null it -> no interstitial.
@@ -108,6 +109,22 @@ internal val ipifyFetchFingerprint = Fingerprint(
     returnType = "Ljava/lang/Object;",
     parameters = listOf("Ljava/lang/Object;"),
     filters = listOf(string("https://api.ipify.org")),
+)
+
+// SocialPlus feed / daily check-in ads — a separate ad system (com.jazz.socialplus) from the
+// jazzworld daily-reward ads above, with its own AdManager banner + native loader. The public
+// entry points on FeedAdsManager are stubbed so the feed/top-banner state flows stay empty and
+// nothing renders (the app already ships with ADS_FEATURE_ENABLED = false, so no-ads is a valid state).
+// loadTopBanner() is the banner on the daily check-in screen; loadAd(int) fills the in-feed ad slots.
+internal val feedAdsLoadTopBannerFingerprint = Fingerprint(
+    returnType = "V",
+    parameters = listOf(),
+    custom = { m, c -> c.type == SOCIALPLUS_FEED_ADS_MANAGER && m.name == "loadTopBanner" },
+)
+internal val feedAdsLoadAdFingerprint = Fingerprint(
+    returnType = "V",
+    parameters = listOf("I"),
+    custom = { m, c -> c.type == SOCIALPLUS_FEED_ADS_MANAGER && m.name == "loadAd" },
 )
 
 // ---------------- TRACKERS ----------------
@@ -232,7 +249,7 @@ private val disableAutoCollectionResourcePatch = resourcePatch(
 @Suppress("unused")
 val removeAdsAndTrackingPatch = bytecodePatch(
     name = "Remove ads & tracking",
-    description = "Removes every ad (interstitial, banner, daily-reward) and every tracker " +
+    description = "Removes every ad (interstitial, banner, daily-reward, daily check-in / SocialPlus feed) and every tracker " +
         "(Mixpanel, Firebase, Facebook, AppsFlyer) — app events, network sends, ad-SDK requests " +
         "(Google Ads / AppLovin / AnyMind / Prebid), SDK auto-collection, and the ipify IP leak. " +
         "The app then phones home only to its own Jazz API.",
@@ -281,6 +298,8 @@ val removeAdsAndTrackingPatch = bytecodePatch(
             prebidInit4Fingerprint,
             prebidInit3Fingerprint,
             prebidSdkInitializerFingerprint,
+            feedAdsLoadTopBannerFingerprint,
+            feedAdsLoadAdFingerprint,
         ).forEach { stub(it, "return-void") }
 
         // return false: ad-config gate + Facebook auto-collection getters
