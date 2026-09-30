@@ -1,6 +1,6 @@
 # Proxma Patches
 
-Morphe patch bundle for **My Telenor**, **Investify**, **Simosa** (Jazz), **OLX**, **MTProxy**, **MyZong** (Zong), and **NetMonster**. See [Patches](#patches) below for the current list of apps, supported versions, and what each patch does.
+Morphe patch bundle for **My Telenor**, **Investify**, **Simosa** (Jazz), **OLX**, **MTProxy**, **MyZong** (Zong), **NetMonster**, and **foodpanda**. See [Patches](#patches) below for the current list of apps, supported versions, and what each patch does.
 
 ## How to use
 
@@ -77,6 +77,15 @@ _Supported version(s): 3.4.3_
 | Patch | Description |
 |-------|-------------|
 | **Unlock premium (NetMonster)** | Unlocks NetMonster Premium — forces the premium repo's derived flows so real-time LTE/NR-NSA location calculation is unlocked, ads are removed, and the status shows Active (far-future expiry) without an Adapty subscription. |
+
+### foodpanda (`com.global.foodpanda.android`)
+
+_Supported version(s): 26.38.1_
+
+| Patch | Description |
+|-------|-------------|
+| **Bypass anti-tamper (foodpanda)** | Bypasses foodpanda's DeliveryHero MAS integrity block — forces the master security gate (`w9u.a`) to report the device/app as trusted, so re-signed / sideloaded builds no longer hit the "This device or application is not supported" BlockedActivity. |
+| **Unlock premium (foodpanda)** | Unlocks foodpanda pandapro — forces every `isSubscribed()` check to report subscribed and `hasBenefits()` true, so the app's pro state, UI and entitlement gates unlock. Server-enforced benefits (free delivery, vouchers) still require a real subscription. |
 
 ## Troubleshooting
 
