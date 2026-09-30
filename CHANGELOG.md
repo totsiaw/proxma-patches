@@ -1,3 +1,10 @@
+## [1.13.0](https://github.com/totsiaw/proxma-patches/compare/1.12.1...1.13.0) (2026-09-30)
+
+### New Features
+
+* add foodpanda Bypass anti-tamper + Unlock premium patches ([73da778](https://github.com/totsiaw/proxma-patches/commit/73da778994bc5973d0bdd56fec7365c3ae9c9d03))
+* **simosa:** remove day-10/20/30 check-in milestone RewardedAd ([8946da4](https://github.com/totsiaw/proxma-patches/commit/8946da4f1f764e29f6b120f6bad3f01f09be88f2))
+
 ## [1.12.1](https://github.com/totsiaw/proxma-patches/compare/1.12.0...1.12.1) (2026-09-21)
 
 ### Bug Fixes
