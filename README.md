@@ -41,7 +41,7 @@ _Supported version(s): 26.38.1_
 | Patch | Description |
 |-------|-------------|
 | **Bypass anti-tamper (foodpanda)** | Bypasses foodpanda's DeliveryHero MAS integrity block — forces the master security gate (`w9u.a`) to report the device/app as trusted, so re-signed / sideloaded builds no longer hit the "This device or application is not supported" BlockedActivity. |
-| **Remove ads** | Removes foodpanda's order-tracking ads (DeliveryHero adtech) and the forced, repeatedly-reappearing PandaMart "CrossSell" promo popup on the order-tracking screen. |
+| **Remove ads** | Removes foodpanda's adtech banner ads (all placements: order-tracking, home, discovery, reels) and the forced PandaMart "CrossSell" popup, and suppresses the forced in-app review prompt (DeliveryHero InAppRatingActivity). |
 | **Unlock premium (foodpanda)** | Unlocks foodpanda pandapro — forces every `isSubscribed()` check (status instanceof UserSubscriptionStatus.Subscribed) to report subscribed and forces Subscribed.hasBenefits() true, so the app's pro state, UI and entitlement gates unlock. Server-enforced benefits (free delivery, vouchers) still require a real subscription. |
 
 ### Safar (`com.safar.fyi`)
