@@ -1,3 +1,9 @@
+## [1.15.0](https://github.com/totsiaw/proxma-patches/compare/1.14.0...1.15.0) (2026-10-12)
+
+### New Features
+
+* foodpanda — remove home/reels ad banners, CrossSell popup, and forced review prompt ([d8df775](https://github.com/totsiaw/proxma-patches/commit/d8df775652a805e579e4cff95b4c6d59e361f4c5))
+
 ## [1.14.0](https://github.com/totsiaw/proxma-patches/compare/1.13.0...1.14.0) (2026-10-07)
 
 ### New Features
