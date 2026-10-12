@@ -7,13 +7,15 @@ import app.morphe.patcher.util.smali.ExternalLabel
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
+import com.android.tools.smali.dexlib2.iface.reference.TypeReference
 
 @Suppress("unused")
 val bypassLoginPatch = bytecodePatch(
     name = "Bypass login",
     description = "Auto sign-in on launch to bypass the login wall. Triggers anonymous " +
         "Firebase auth at two hook points using the real signInAnonymously chain " +
-        "(H3/h + zzacq.zza) with isAnonymous guard.",
+        "(H3/h + zzacq.zza) with isAnonymous guard. Also substitutes the Google " +
+        "sign-in provider flow with anonymous auth (SHA-1 mismatch on re-signed builds).",
 ) {
     compatibleWith(COMPATIBILITY_STORYWISE)
 
@@ -86,6 +88,65 @@ val bypassLoginPatch = bytecodePatch(
                 move-result-object v3
             """.trimIndent(),
             ExternalLabel("sw_a2_skip", a2Insns[retIdx]),
+        )
+
+        // A3: signInWithProvider (Google button) in O5/p.i() — substitute with anonymous
+        // .locals 13 → v0..v12 free. Anchor: check-cast p1, LO5/M; (unique in method)
+        // After auth resolution: v0 = FirebaseAuth, v2 = O5/q reply wrapper
+        val a3Class = mutableClassDefBy("LO5/p;")
+        val a3Method = a3Class.methods.first {
+            it.name == "i" && it.parameterTypes.size == 2
+        }
+        val a3Insns = a3Method.instructions
+
+        val mCastIdx = a3Insns.indexOfFirst { instr ->
+            instr.opcode == Opcode.CHECK_CAST &&
+                ((instr as? ReferenceInstruction)?.reference as? TypeReference)?.type == "LO5/M;"
+        }
+        check(mCastIdx >= 0) { "storywise: check-cast LO5/M; anchor not found in O5/p.i" }
+
+        val authInvokeIdx = (mCastIdx until a3Insns.size).first { idx ->
+            val instr = a3Insns[idx]
+            val ref = (instr as? ReferenceInstruction)?.reference as? MethodReference
+            ref != null && ref.definingClass == "LO5/e;" && ref.name == "b" &&
+                ref.returnType == "Lcom/google/firebase/auth/FirebaseAuth;"
+        }
+        val moveResultIdx = authInvokeIdx + 1
+        check(a3Insns[moveResultIdx].opcode == Opcode.MOVE_RESULT_OBJECT) {
+            "storywise: expected move-result-object after O5/e.b in signInWithProvider"
+        }
+
+        a3Method.addInstructionsWithLabels(
+            moveResultIdx + 1,
+            """
+                iget-object v3, v0, Lcom/google/firebase/auth/FirebaseAuth;->f:LH3/p;
+                if-eqz v3, :sw_a3_signin
+                invoke-virtual {v3}, LH3/p;->q()Z
+                move-result v4
+                if-eqz v4, :sw_a3_signin
+                check-cast v3, LI3/f;
+                const/4 v4, 0x0
+                iput-boolean v4, v3, LI3/f;->B:Z
+                new-instance v4, LI3/X;
+                invoke-direct {v4, v3}, LI3/X;-><init>(LI3/f;)V
+                invoke-static {v4}, Lcom/google/android/gms/tasks/Tasks;->forResult(Ljava/lang/Object;)Lcom/google/android/gms/tasks/Task;
+                move-result-object p1
+                goto :sw_a3_wire
+                :sw_a3_signin
+                new-instance v3, LH3/h;
+                invoke-direct {v3, v0}, LH3/h;-><init>(Lcom/google/firebase/auth/FirebaseAuth;)V
+                iget-object v4, v0, Lcom/google/firebase/auth/FirebaseAuth;->k:Ljava/lang/String;
+                iget-object v5, v0, Lcom/google/firebase/auth/FirebaseAuth;->e:Lcom/google/android/gms/internal/firebase-auth-api/zzacq;
+                iget-object v6, v0, Lcom/google/firebase/auth/FirebaseAuth;->a:Lw3/g;
+                invoke-virtual {v5, v6, v3, v4}, Lcom/google/android/gms/internal/firebase-auth-api/zzacq;->zza(Lw3/g;LI3/N;Ljava/lang/String;)Lcom/google/android/gms/tasks/Task;
+                move-result-object p1
+                :sw_a3_wire
+                new-instance p2, LI4/M;
+                const/16 v3, 0xa
+                invoke-direct {p2, v2, v3}, LI4/M;-><init>(Ljava/lang/Object;I)V
+                invoke-virtual {p1, p2}, Lcom/google/android/gms/tasks/Task;->addOnCompleteListener(Lcom/google/android/gms/tasks/OnCompleteListener;)Lcom/google/android/gms/tasks/Task;
+                return-void
+            """.trimIndent(),
         )
     }
 }
