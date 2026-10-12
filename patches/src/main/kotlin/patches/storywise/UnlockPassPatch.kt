@@ -17,7 +17,9 @@ internal val firestoreDocConverterFingerprint = Fingerprint(
 val unlockPassPatch = bytecodePatch(
     name = "Unlock pass",
     description = "Unlocks paid content (Monthly Pass: lessons, tutor, reports) by forging " +
-        "pass-expiry and active fields in Firestore document maps the app reads.",
+        "pass-expiry and active fields in Firestore document maps the app reads. Also " +
+        "forces latest_version_name and android_latest_build to installed values when " +
+        "present in a Firestore doc, blocking the update prompt via the Firestore path.",
 ) {
     compatibleWith(COMPATIBILITY_STORYWISE)
 
@@ -31,6 +33,43 @@ val unlockPassPatch = bytecodePatch(
         method.addInstructionsWithLabels(
             retIdx,
             """
+                if-eqz p1, :sw_b_ver_done
+                const-string v0, "latest_version_name"
+                invoke-interface {p1, v0}, Ljava/util/Map;->containsKey(Ljava/lang/Object;)Z
+                move-result v1
+                if-eqz v1, :sw_b_ver2
+                const-string v1, "1.0.3"
+                invoke-interface {p1, v0, v1}, Ljava/util/Map;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
+                :sw_b_ver2
+                const-string v0, "android_latest_build"
+                invoke-interface {p1, v0}, Ljava/util/Map;->containsKey(Ljava/lang/Object;)Z
+                move-result v1
+                if-eqz v1, :sw_b_ver_done
+                invoke-interface {p1, v0}, Ljava/util/Map;->get(Ljava/lang/Object;)Ljava/lang/Object;
+                move-result-object v1
+                if-eqz v1, :sw_b_ver2_putstr
+                instance-of v2, v1, Ljava/lang/Integer;
+                if-eqz v2, :sw_b_ver2_long
+                const/16 v2, 0x22
+                invoke-static {v2}, Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;
+                move-result-object v1
+                invoke-interface {p1, v0, v1}, Ljava/util/Map;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
+                goto :sw_b_ver_done
+                :sw_b_ver2_long
+                instance-of v2, v1, Ljava/lang/Long;
+                if-eqz v2, :sw_b_ver2_chkstr
+                const-wide/16 v1, 0x22
+                invoke-static {v1, v2}, Ljava/lang/Long;->valueOf(J)Ljava/lang/Long;
+                move-result-object v1
+                invoke-interface {p1, v0, v1}, Ljava/util/Map;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
+                goto :sw_b_ver_done
+                :sw_b_ver2_chkstr
+                instance-of v2, v1, Ljava/lang/String;
+                if-eqz v2, :sw_b_ver_done
+                :sw_b_ver2_putstr
+                const-string v1, "34"
+                invoke-interface {p1, v0, v1}, Ljava/util/Map;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
+                :sw_b_ver_done
                 iget-object v0, p0, Lj4/p;->b:Lp4/h;
                 if-eqz v0, :sw_b_end
                 iget-object v0, v0, Lp4/h;->a:Lp4/m;
