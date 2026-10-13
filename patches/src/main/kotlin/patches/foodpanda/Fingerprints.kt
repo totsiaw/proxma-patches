@@ -99,3 +99,37 @@ internal val masGateFingerprint = Fingerprint(
         string("MAS evaluation failed."),
     ),
 )
+
+internal const val BLOCKED_ACTIVITY_TYPE = "Lcom/deliveryhero/app/security/ui/BlockedActivity;"
+
+/**
+ * The MAS enforcement ORCHESTRATOR — obfuscated `Ldy1;->a(Landroid/app/Activity;Lz2a;)Ljava/lang/
+ * Object;`, a Kotlin `suspend fun` run on every foreground Activity (by the activity-lifecycle
+ * callback `by1`). It is the sole consumer of the master MAS gate (`masGateFingerprint`): it awaits
+ * that gate's Boolean and, when it is FALSE (untrusted), builds the launcher that does
+ * `startActivity(Intent(activity, BlockedActivity.class))` + `finish()`. When the gate is TRUE it
+ * returns `Unit` and nothing happens.
+ *
+ * This is the independent SECOND layer of the anti-tamper bypass: forcing this method to return
+ * `Unit` at entry means the MAS gate is never consulted and the BlockedActivity launcher is never
+ * constructed, so the block screen cannot appear — even on a build/R8 variant where the gate's
+ * log-string anchors drift and `masGateFingerprint` fails to resolve. `by1` sees a non-SUSPENDED
+ * `Unit`, so it proceeds exactly as it would for a trusted device (the app stays usable).
+ *
+ * Anchored name-agnostically on the stable, NON-obfuscated first-party type it guards on:
+ *   `instance-of ..., Lcom/deliveryhero/app/security/ui/BlockedActivity;`
+ * (the "am I already on the block screen?" check). That instruction is UNIQUE to this method across
+ * the whole app — no other method does an `instance-of BlockedActivity` — so combined with the exact
+ * method shape (public final suspend fn whose first param is the framework type
+ * `Landroid/app/Activity;`, second is an obfuscated `Continuation` -> "L", returns
+ * `Ljava/lang/Object;`) it pins the orchestrator uniquely without keying on the minified holder
+ * `dy1` or the launcher `fb`.
+ */
+internal val blockScreenGuardFingerprint = Fingerprint(
+    returnType = "Ljava/lang/Object;",
+    accessFlags = listOf(AccessFlags.PUBLIC, AccessFlags.FINAL),
+    parameters = listOf("Landroid/app/Activity;", "L"), // (Activity, obfuscated Continuation)
+    filters = listOf(
+        instanceOf(BLOCKED_ACTIVITY_TYPE),
+    ),
+)
