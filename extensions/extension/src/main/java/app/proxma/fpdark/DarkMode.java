@@ -8,6 +8,7 @@ import android.content.SharedPreferences;
 import java.lang.reflect.Method;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.CheckBox;
 import android.widget.CompoundButton;
 import android.widget.LinearLayout;
 
@@ -109,18 +110,18 @@ public final class DarkMode {
             View clone = templateGroup.getChildAt(0);
             Context context = row.getContext();
 
-            androidx.cardview.widget.CardView card = new androidx.cardview.widget.CardView(context);
-            card.setRadius(((androidx.cardview.widget.CardView) clone).getRadius());
-            card.setCardElevation(((androidx.cardview.widget.CardView) clone).getCardElevation());
-            card.setMaxCardElevation(((androidx.cardview.widget.CardView) clone).getMaxCardElevation());
-            card.setUseCompatPadding(((androidx.cardview.widget.CardView) clone).getUseCompatPadding());
-            card.setPreventCornerOverlap(((androidx.cardview.widget.CardView) clone).getPreventCornerOverlap());
-            card.setCardBackgroundColor(((androidx.cardview.widget.CardView) clone).getCardBackgroundColor());
-
-            ViewGroup.LayoutParams lp = clone.getLayoutParams();
-            if (lp instanceof LinearLayout.LayoutParams) {
-                card.setLayoutParams(new LinearLayout.LayoutParams((LinearLayout.LayoutParams) lp));
-            }
+            // The app's own classes (androidx CardView, CoreCheckBox) are not on this
+            // module's compile classpath, so build the row without naming them.
+            android.view.ViewGroup card = new android.view.ViewGroup(context) {
+                @Override
+                public void onLayout(boolean changed, int l, int t, int r, int b) {
+                    int childCount = getChildCount();
+                    for (int i = 0; i < childCount; i++) {
+                        View child = getChildAt(i);
+                        child.layout(l, t, r, b);
+                    }
+                }
+            };
 
             LinearLayout inner = new LinearLayout(context);
             inner.setOrientation(LinearLayout.VERTICAL);
@@ -134,7 +135,7 @@ public final class DarkMode {
                         innerTemplate.getPaddingBottom());
             }
 
-            com.deliveryhero.pretty.core.CoreCheckBox check = new com.deliveryhero.pretty.core.CoreCheckBox(context, null);
+            CheckBox check = new CheckBox(context);
             check.setText("Dark mode");
             check.setChecked(on);
             check.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
@@ -145,7 +146,6 @@ public final class DarkMode {
                 }
             });
             inner.addView(check, new LinearLayout.LayoutParams(-1, -2));
-
             card.addView(inner);
             parent.addView(card, 1);
         } catch (Throwable ignored) {
