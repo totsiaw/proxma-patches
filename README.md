@@ -25,6 +25,16 @@ _Supported version(s): 4.2.62_
 | **Bypass device validation** | Neutralizes the client-side device-validation gate (anti-root / anti-emulator / anti-Frida / anti-Xposed / anti-tamper battery) that shows a "Device validation failed" toast and kills the app via finishAffinity() on a rooted, emulated or re-signed build. Redirects the single failure callback to the success path so all ~16 checks report as passed and the app keeps running pre- and post-login. |
 | **Remove ads** | Removes every Google Ad Manager ad (banners + interstitials) across Daily Rewards, Home, Test Your Skills and Explore by nulling the remote ad-config chokepoint, so each surface renders its no-ads layout and never requests an interstitial. |
 
+### Storywise (`com.storywise.storywise`)
+
+_Supported version(s): 1.0.3_
+
+| Patch | Description |
+|-------|-------------|
+| **Block update prompt** | Forces Remote Config to report latest_version_name=1.0.3 and android_latest_build=34, matching the installed version so the force-update dialog never appears. |
+| **Bypass login** | Restores a signed-in user from an embedded assets/sw_cred.json (pre-formatted Firebase credential file) into SharedPreferences before FirebaseAuth initialises, so the constructor picks up the stored user. Falls back to anonymous sign-in (H3/h + zzacq.zza) if the asset is missing. Also short-circuits the Google sign-in provider flow (O5/p pswitch_5) to reuse the current user. |
+| **Unlock pass** | Unlocks paid content (Monthly Pass: lessons, tutor, reports) by forging pass-expiry and active fields in Firestore document maps the app reads. Also forces latest_version_name and android_latest_build to installed values when present in a Firestore doc, blocking the update prompt via the Firestore path. |
+
 ### Investify (`com.blueinklabs.investifystocks.free`)
 
 _Supported version(s): 5.6.0_
@@ -41,6 +51,7 @@ _Supported version(s): 26.38.1_
 | Patch | Description |
 |-------|-------------|
 | **Bypass anti-tamper (foodpanda)** | Bypasses foodpanda's DeliveryHero MAS integrity block — forces the master security gate (`w9u.a`) to report the device/app as trusted AND short-circuits the enforcement orchestrator that launches the block screen, so re-signed / sideloaded builds no longer hit the "This device or application is not supported" BlockedActivity. |
+| **Force dark mode** | Rewrites foodpanda's baked-in Bento color constants to dark equivalents so the app renders a real dark theme. The app ships no dark palette — R8 merged its light and dark token sets into one identical set of dex constants — so theme, force-dark and values-night changes have no effect. Brand colors are left untouched. |
 | **Remove ads** | Removes foodpanda's adtech banner ads (all placements: order-tracking, home, discovery, reels) and the forced PandaMart "CrossSell" popup, and suppresses the forced in-app review prompt (DeliveryHero InAppRatingActivity). |
 | **Unlock premium (foodpanda)** | Unlocks foodpanda pandapro — forces every `isSubscribed()` check (status instanceof UserSubscriptionStatus.Subscribed) to report subscribed and forces Subscribed.hasBenefits() true, so the app's pro state, UI and entitlement gates unlock. Server-enforced benefits (free delivery, vouchers) still require a real subscription. |
 
