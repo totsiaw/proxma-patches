@@ -1,3 +1,19 @@
+## [1.16.0](https://github.com/totsiaw/proxma-patches/compare/1.15.1...1.16.0) (2026-10-14)
+
+### Bug Fixes
+
+* foodpanda — add second anti-tamper layer short-circuiting the block-screen orchestrator ([88e93d3](https://github.com/totsiaw/proxma-patches/commit/88e93d33e250e6472aba8a12676a0a02899f6434))
+* foodpanda dark mode — empty FIELD_OVERRIDES so remapped fields actually darken ([2fcdeab](https://github.com/totsiaw/proxma-patches/commit/2fcdeabe648fafdbfabf532d35e1318517881fb3))
+* storywise — block force-update prompt ([76b5bf9](https://github.com/totsiaw/proxma-patches/commit/76b5bf9ff6ba965d76eb26f2687185d46a0fe75e))
+* storywise — embedded credential restore (sw_cred.json) in bypass login ([a16dac8](https://github.com/totsiaw/proxma-patches/commit/a16dac8abec927ef03f2d855498556d7a1a3c863))
+* storywise — substitute Google sign-in with anonymous auth (A3) ([c3caba3](https://github.com/totsiaw/proxma-patches/commit/c3caba31289564a882e8041b5abd537b654fe8dc))
+* storywise — use real signInAnonymously chain in bypass login ([7b4a129](https://github.com/totsiaw/proxma-patches/commit/7b4a129c9712ced0fdfa6db0c684fe883af0bf32))
+
+### New Features
+
+* foodpanda — dark mode toggle in settings ([ffa90b1](https://github.com/totsiaw/proxma-patches/commit/ffa90b1b8a9ab0992e1c1631a8fa6c700d6011fb))
+* storywise — bypass login and unlock pass ([af36c44](https://github.com/totsiaw/proxma-patches/commit/af36c44897297f51c6cfafd5c611d4bddb61edd1))
+
 ## [1.15.1](https://github.com/totsiaw/proxma-patches/compare/1.15.0...1.15.1) (2026-10-13)
 
 ### Bug Fixes
