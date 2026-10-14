@@ -1,3 +1,24 @@
+## [1.15.1](https://github.com/totsiaw/proxma-patches/compare/1.15.0...1.15.1) (2026-10-13)
+
+### Bug Fixes
+
+* foodpanda — add second anti-tamper layer short-circuiting the block-screen orchestrator ([c7ffeb9](https://github.com/totsiaw/proxma-patches/commit/c7ffeb91bcd6b2883cc1ba35f10292d30d1dc949))
+
+## [1.15.0](https://github.com/totsiaw/proxma-patches/compare/1.14.0...1.15.0) (2026-10-12)
+
+### New Features
+
+* foodpanda — remove home/reels ad banners, CrossSell popup, and forced review prompt ([d8df775](https://github.com/totsiaw/proxma-patches/commit/d8df775652a805e579e4cff95b4c6d59e361f4c5))
+
+## [1.14.0](https://github.com/totsiaw/proxma-patches/compare/1.13.0...1.14.0) (2026-10-07)
+
+### New Features
+
+* add foodpanda order-tracking ad + PandaMart popup removal ([804b285](https://github.com/totsiaw/proxma-patches/commit/804b2854313bf446f327883158562aebd0d29877))
+* add Safar (com.safar.fyi) ad removal ([299dc68](https://github.com/totsiaw/proxma-patches/commit/299dc68b66bdd3978784079923aef927605a5cc7))
+* bypass PairIP license check for Safar re-signed builds ([e00e097](https://github.com/totsiaw/proxma-patches/commit/e00e0972c78b36b789b72a8fac1b89326d657fe9))
+* update NetMonster premium unlock for 4.0.4 ([5ae6b63](https://github.com/totsiaw/proxma-patches/commit/5ae6b63e5dc8771c171f2d59632aae8622ea0c88))
+
 ## [1.13.0](https://github.com/totsiaw/proxma-patches/compare/1.12.1...1.13.0) (2026-09-30)
 
 ### New Features
