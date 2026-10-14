@@ -133,3 +133,18 @@ internal val blockScreenGuardFingerprint = Fingerprint(
         instanceOf(BLOCKED_ACTIVITY_TYPE),
     ),
 )
+
+/**
+ * `androidx.activity.ComponentActivity.onCreate(Bundle)` — the common base of every foodpanda
+ * activity (`LauncherActivity` extends it directly; all AppCompat/Fragment activities inherit it via
+ * `FragmentActivity`). AndroidX keeps this class name (it is referenced from the manifest's activity
+ * hierarchy), so we anchor on the real class + method name, never on a minified holder.
+ *
+ * Used by the dark-mode patch as a single per-activity entry point that runs before any window is
+ * attached (the platform reads the force-dark state when the ViewRootImpl is created, after onCreate).
+ */
+internal val componentActivityOnCreateFingerprint = Fingerprint(
+    returnType = "V",
+    parameters = listOf("Landroid/os/Bundle;"),
+    custom = { m, c -> c.type == "Landroidx/activity/ComponentActivity;" && m.name == "onCreate" },
+)

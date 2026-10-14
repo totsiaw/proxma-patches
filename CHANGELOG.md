@@ -1,3 +1,9 @@
+## [1.15.1](https://github.com/totsiaw/proxma-patches/compare/1.15.0...1.15.1) (2026-10-13)
+
+### Bug Fixes
+
+* foodpanda — add second anti-tamper layer short-circuiting the block-screen orchestrator ([c7ffeb9](https://github.com/totsiaw/proxma-patches/commit/c7ffeb91bcd6b2883cc1ba35f10292d30d1dc949))
+
 ## [1.15.0](https://github.com/totsiaw/proxma-patches/compare/1.14.0...1.15.0) (2026-10-12)
 
 ### New Features
