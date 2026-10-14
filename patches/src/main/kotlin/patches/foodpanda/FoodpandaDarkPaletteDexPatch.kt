@@ -235,7 +235,7 @@ val foodpandaDarkPaletteDexPatch = bytecodePatch(
         "values-night changes have no effect. Brand colors are left untouched.",
 ) {
     compatibleWith(COMPATIBILITY_FOODPANDA)
-    extendWith("extensions/fpdark.mpe")
+    extendWith("extensions/extension.mpe")
 
     execute {
         val palette = mutableClassDefByOrNull(PALETTE_CLASS)
