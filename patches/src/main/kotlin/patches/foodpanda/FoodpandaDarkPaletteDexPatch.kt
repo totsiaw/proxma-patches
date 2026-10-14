@@ -1,8 +1,10 @@
 package patches.foodpanda
 
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
+import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
 import app.morphe.patcher.extensions.InstructionExtensions.instructions
 import app.morphe.patcher.patch.bytecodePatch
+import app.morphe.patcher.util.smali.ExternalLabel
 
 /*
  * foodpanda app-wide dark mode — the layer that actually owns the colors.
@@ -196,6 +198,34 @@ private fun packedColor(hex: String): Long = java.lang.Long.parseUnsignedLong(he
 
 private const val PALETTE_CLASS = "Lm7g;"
 
+/*
+ * The "How was <shop>?" rating card is not an Lm7g color: it is a gradient Brush from the Bento
+ * gradient-token class `Lq7g` (implements `Lsm3`, foodpanda's twin of foodora's `Lc6g`), built in
+ * the ctor as `Lgnd;->i([Pair;JJ)Lzom` (linearGradient over color stops) into field `l`, returned
+ * by `Lsm3;->m()`. The rating sheet (`wue0.h`, "qc-survey-*") passes it to `Lijb;->f`, i.e.
+ * `Modifier.background(brush, shape)` — a container, not a foreground. Its stops are exactly
+ * foodpanda_color_surfaceRatingGradientStart/End; the card pixels sampled from the device lie on
+ * that interpolation. Only this one field is touched; the other 10 gradients stay as shipped.
+ */
+private const val GRADIENT_CLASS = "Lq7g;"
+private const val RATING_GRADIENT_FIELD = "$GRADIENT_CLASS->l:Lzom;"
+
+/**
+ * surfaceRatingGradient stops in order: light literal (asserted) -> extension helper that returns the
+ * dark stop when the toggle is on (ff2b1820 / ff52253a, same as Lm7g's map) and the input otherwise.
+ */
+private val RATING_GRADIENT_STOPS = listOf("ffffebeb" to "ratingStart", "ffffc4cc" to "ratingEnd")
+
+/*
+ * Dark-mode toggle. `extensions/foodpanda-darkmode/smali` is assembled into `extensions/fpdark.mpe`
+ * (a raw dex) and merged by extendWith. `DarkMode.on` (default true; SharedPreferences
+ * "fp_dark_mode") gates every rewrite below, and SettingsFragment gets a "Dark mode" checkbox card
+ * that flips it and restarts the app — the Bento theme objects are built once, so a static flag
+ * cannot recompose live.
+ */
+private const val DARK_MODE = "Lapp/proxma/fpdark/DarkMode;"
+private const val SETTINGS_FRAGMENT = "Lcom/deliveryhero/preferences/settings/SettingsFragment;"
+
 @Suppress("unused")
 val foodpandaDarkPaletteDexPatch = bytecodePatch(
     name = "Force dark mode",
@@ -205,6 +235,7 @@ val foodpandaDarkPaletteDexPatch = bytecodePatch(
         "values-night changes have no effect. Brand colors are left untouched.",
 ) {
     compatibleWith(COMPATIBILITY_FOODPANDA)
+    extendWith("extensions/fpdark.mpe")
 
     execute {
         val palette = mutableClassDefByOrNull(PALETTE_CLASS)
@@ -310,12 +341,16 @@ val foodpandaDarkPaletteDexPatch = bytecodePatch(
                 }
                 if (!readsField) continue
                 val packed = packedColor(dark)
-                method.addInstructions(
+                // toggle off -> fall through to the untouched original getter
+                method.addInstructionsWithLabels(
                     0,
                     """
+                        sget-boolean v0, $DARK_MODE->on:Z
+                        if-eqz v0, :fp_dark_off
                         const-wide v0, ${packed}L
                         return-wide v0
                     """.trimIndent(),
+                    ExternalLabel("fp_dark_off", method.instructions.first()),
                 )
                 rewritten++
             }
@@ -325,5 +360,124 @@ val foodpandaDarkPaletteDexPatch = bytecodePatch(
             "foodpanda dark mode: mapped ${fieldToLiteral.size} palette fields, " +
                 "remapped ${remap.size}, kept $kept, rewrote $rewritten getters",
         )
+
+        // 4) rating card gradient: route the packed stop colors that feed Lq7g->l (only) through
+        //    DarkMode. Each stop is `invoke-static Lh91;->f/e ; move-result-wide vY ; Lfi8.<init>(vY)`,
+        //    so `vY = DarkMode.ratingX(vY)` right after the move-result swaps that stop without
+        //    touching the source registers other gradients share.
+        val gradients = mutableClassDefByOrNull(GRADIENT_CLASS)
+        check(gradients != null) { "foodpanda: $GRADIENT_CLASS not found — gradient class moved?" }
+        val gradCtor = gradients.methods.firstOrNull { it.name == "<init>" && it.parameters.size == 1 }
+        check(gradCtor != null) { "foodpanda: $GRADIENT_CLASS.<init>(I)V not found" }
+
+        val stopRaw = HashMap<Int, String>()
+        // registers loaded before the flag `packed-switch` are live again in the :pswitch_0 branch
+        // that follows the first return-void (v12 = ffffebeb is one), so restore them there
+        var atSwitch: Map<Int, String> = emptyMap()
+        var stopPending: String? = null
+        val segment = ArrayList<Triple<Int, Int, String>>() // (insn index, result register, light literal)
+        var builtStops: List<Triple<Int, Int, String>>? = null // stops consumed by the last Lgnd.i
+        val brushStops = HashMap<Int, List<Triple<Int, Int, String>>>() // brush register -> its stops
+        val inserts = ArrayList<Triple<Int, Int, String>>()  // (insert index, register, dark literal)
+        var ratingSegments = 0
+        for ((index, insn) in gradCtor.instructions.withIndex()) {
+            val op = insn.opcodeName()
+            val a = insn.regA()
+            when {
+                op == "return_void" -> {
+                    stopRaw.clear(); stopRaw.putAll(atSwitch)
+                    segment.clear(); brushStops.clear(); builtStops = null; stopPending = null
+                }
+                op == "packed_switch" -> atSwitch = HashMap(stopRaw)
+                op.startsWith("const_wide") -> {
+                    if (a == null) continue
+                    val lit = (insn.fld("literal") as? Number)?.toLong()
+                    if (lit != null) stopRaw[a] = "%08x".format(lit and 0xffffffffL) else stopRaw.remove(a)
+                }
+                op.startsWith("const") -> {
+                    if (a == null) continue
+                    val lit = (insn.fld("literal") as? Number)?.toLong()
+                    if (lit != null && !op.contains("string") && !op.contains("class")) {
+                        stopRaw[a] = "%08x".format(lit and 0xffffffffL)
+                    } else {
+                        stopRaw.remove(a)
+                    }
+                }
+                op.startsWith("move_wide") -> {
+                    val b = insn.fld("registerB") as? Int
+                    if (a == null || b == null) continue
+                    stopRaw[b]?.let { stopRaw[a] = it } ?: stopRaw.remove(a)
+                }
+                op.startsWith("invoke_static") -> {
+                    val ref = insn.refStr()
+                    val first = if (op.contains("range")) insn.startReg() else insn.regC()
+                    val packs = ref == "Lh91;->f(J)J" || ref == "Lh91;->e(I)J"
+                    stopPending = if (packs && first != null) stopRaw[first] else null
+                    // linearGradient(stops, start, end): its stops are the colors converted since the last one
+                    if (ref?.startsWith("Lgnd;->i([Lkotlin/Pair;JJ)") == true) {
+                        builtStops = segment.toList()
+                        segment.clear()
+                    }
+                }
+                op.startsWith("invoke") -> stopPending = null
+                op == "move_result_wide" -> {
+                    if (a == null) continue
+                    stopRaw.remove(a)
+                    stopPending?.let { segment.add(Triple(index, a, it)) }
+                    stopPending = null
+                }
+                op == "move_result_object" -> {
+                    if (a == null) continue
+                    builtStops?.let { brushStops[a] = it } ?: brushStops.remove(a)
+                    builtStops = null
+                }
+                op.startsWith("iput_object") -> {
+                    if (insn.refStr() == RATING_GRADIENT_FIELD) {
+                        val stops = a?.let { brushStops[it] } ?: emptyList()
+                        val lights = stops.map { it.third }
+                        check(lights == RATING_GRADIENT_STOPS.map { it.first }) {
+                            "foodpanda: $RATING_GRADIENT_FIELD stops are $lights, expected " +
+                                "${RATING_GRADIENT_STOPS.map { it.first }} — gradient layout changed"
+                        }
+                        for ((i, stop) in stops.withIndex()) {
+                            check(stop.second < 15) { "foodpanda: stop register v${stop.second} too high for invoke-static" }
+                            inserts.add(Triple(stop.first + 1, stop.second, RATING_GRADIENT_STOPS[i].second))
+                        }
+                        ratingSegments++
+                    }
+                }
+            }
+        }
+        check(ratingSegments > 0) { "foodpanda: no store to $RATING_GRADIENT_FIELD found in $GRADIENT_CLASS.<init>" }
+        for ((at, reg, helper) in inserts.sortedByDescending { it.first }) {
+            gradCtor.addInstructions(
+                at,
+                """
+                    invoke-static {v$reg, v${reg + 1}}, $DARK_MODE->$helper(J)J
+                    move-result-wide v$reg
+                """.trimIndent(),
+            )
+        }
+        println(
+            "foodpanda dark mode: rating card gradient $RATING_GRADIENT_FIELD rewrote " +
+                "${inserts.size} stops in $ratingSegments ctor branch(es)",
+        )
+
+        // 5) the toggle row: SettingsFragment.onCreateView returns the inflated ScrollView exactly
+        //    once on its success path; hand it to DarkMode.attach first.
+        val settings = mutableClassDefByOrNull(SETTINGS_FRAGMENT)
+        check(settings != null) { "foodpanda: $SETTINGS_FRAGMENT not found" }
+        val onCreateView = settings.methods.firstOrNull {
+            it.name == "onCreateView" && it.returnType == "Landroid/view/View;"
+        }
+        check(onCreateView != null) { "foodpanda: $SETTINGS_FRAGMENT.onCreateView not found" }
+        val returns = onCreateView.instructions.withIndex().filter { it.value.opcodeName() == "return_object" }
+        // [0] returns the binding root (ScrollView); [1] is the "Missing required view" failure path
+        check(returns.size == 2) { "foodpanda: onCreateView has ${returns.size} return-object, expected 2" }
+        val (retAt, ret) = returns.first()
+        val rootReg = ret.regA()
+        check(rootReg != null && rootReg < 16) { "foodpanda: unexpected onCreateView return register $rootReg" }
+        onCreateView.addInstructions(retAt, "invoke-static {v$rootReg}, $DARK_MODE->attach(Landroid/view/View;)V")
+        println("foodpanda dark mode: toggle row hooked into $SETTINGS_FRAGMENT.onCreateView (v$rootReg)")
     }
 }
