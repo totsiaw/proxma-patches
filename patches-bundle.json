@@ -1,7 +1,7 @@
 {
-  "created_at": "2026-10-14T12:32:00",
-  "description": "## [1.16.0](https://github.com/totsiaw/proxma-patches/compare/1.15.1...1.16.0) (2026-10-14)\n\n### Bug Fixes\n\n* foodpanda — add second anti-tamper layer short-circuiting the block-screen orchestrator ([88e93d3](https://github.com/totsiaw/proxma-patches/commit/88e93d33e250e6472aba8a12676a0a02899f6434))\n* foodpanda dark mode — empty FIELD_OVERRIDES so remapped fields actually darken ([2fcdeab](https://github.com/totsiaw/proxma-patches/commit/2fcdeabe648fafdbfabf532d35e1318517881fb3))\n* storywise — block force-update prompt ([76b5bf9](https://github.com/totsiaw/proxma-patches/commit/76b5bf9ff6ba965d76eb26f2687185d46a0fe75e))\n* storywise — embedded credential restore (sw_cred.json) in bypass login ([a16dac8](https://github.com/totsiaw/proxma-patches/commit/a16dac8abec927ef03f2d855498556d7a1a3c863))\n* storywise — substitute Google sign-in with anonymous auth (A3) ([c3caba3](https://github.com/totsiaw/proxma-patches/commit/c3caba31289564a882e8041b5abd537b654fe8dc))\n* storywise — use real signInAnonymously chain in bypass login ([7b4a129](https://github.com/totsiaw/proxma-patches/commit/7b4a129c9712ced0fdfa6db0c684fe883af0bf32))\n\n### New Features\n\n* foodpanda — dark mode toggle in settings ([ffa90b1](https://github.com/totsiaw/proxma-patches/commit/ffa90b1b8a9ab0992e1c1631a8fa6c700d6011fb))\n* storywise — bypass login and unlock pass ([af36c44](https://github.com/totsiaw/proxma-patches/commit/af36c44897297f51c6cfafd5c611d4bddb61edd1))",
-  "download_url": "https://github.com/totsiaw/proxma-patches/releases/download/1.16.0/patches-1.16.0.mpp",
+  "created_at": "2026-10-14T12:46:06",
+  "description": "## [1.16.1](https://github.com/totsiaw/proxma-patches/compare/1.16.0...1.16.1) (2026-10-14)\n\n### Bug Fixes\n\n* foodpanda — build the toggle row without the app's classes ([5b3d0a1](https://github.com/totsiaw/proxma-patches/commit/5b3d0a1d240156b398d02ec1a418e40aa3df673e))\n* foodpanda — ship the dark mode toggle's classes in the bundle ([0ad4af6](https://github.com/totsiaw/proxma-patches/commit/0ad4af65a100658be769ff390df37d2215ad8ff4))",
+  "download_url": "https://github.com/totsiaw/proxma-patches/releases/download/1.16.1/patches-1.16.1.mpp",
   "signature_download_url": "",
-  "version": "1.16.0"
+  "version": "1.16.1"
 }

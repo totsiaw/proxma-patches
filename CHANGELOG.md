@@ -1,3 +1,10 @@
+## [1.16.1](https://github.com/totsiaw/proxma-patches/compare/1.16.0...1.16.1) (2026-10-14)
+
+### Bug Fixes
+
+* foodpanda — build the toggle row without the app's classes ([5b3d0a1](https://github.com/totsiaw/proxma-patches/commit/5b3d0a1d240156b398d02ec1a418e40aa3df673e))
+* foodpanda — ship the dark mode toggle's classes in the bundle ([0ad4af6](https://github.com/totsiaw/proxma-patches/commit/0ad4af65a100658be769ff390df37d2215ad8ff4))
+
 ## [1.16.0](https://github.com/totsiaw/proxma-patches/compare/1.15.1...1.16.0) (2026-10-14)
 
 ### Bug Fixes
