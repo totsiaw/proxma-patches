@@ -83,6 +83,15 @@ _Supported version(s): 18.8.0_
 | **Force dark mode** | Forces OLX into dark (night) mode regardless of the system theme, using the app's built-in -night resources via UiModeManager.setApplicationNightMode at startup. |
 | **Remove ads** | Removes native feed ads (Google GMA), the full-height ad slot, and the "Buy with Delivery" promo section (bar, cards and View all) from OLX. Pinned to the 18.8.0 build (matches that build's obfuscated feed classes). |
 
+### OLX India (`com.olx.southasia`)
+
+_Supported version(s): 20.07.001_
+
+| Patch | Description |
+|-------|-------------|
+| **Remove Elite promotions** | Removes the promoted Elite seller cards and the buyer-matchmaking recommendation slot from OLX India's listing feed — OLX's own paid placements, which the ad-removal patch does not cover. |
+| **Remove ads** | Removes ads from OLX India by disabling the in-house Baxter ad SDK at its own enable predicate (com.naspers.advertising.baxterandroid.f.d()). Every ad path — native feed, full-page, interstitial, swipe, adpv and the ad view itself — already checks this predicate, so disabling it stops the ad requests rather than just hiding the boxes. |
+
 ### MTProxy (`com.sdev.mtproxy`)
 
 _Supported version(s): 2.1.4_

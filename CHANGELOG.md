@@ -1,3 +1,9 @@
+## [1.17.0](https://github.com/totsiaw/proxma-patches/compare/1.16.1...1.17.0) (2026-10-17)
+
+### New Features
+
+* **olx:** add OLX India remove-ads and remove-Elite-promotions patches ([4632596](https://github.com/totsiaw/proxma-patches/commit/463259672e3467319a9011283b2cd97c7bf0a751)), closes [#24](https://github.com/totsiaw/proxma-patches/issues/24)
+
 ## [1.16.1](https://github.com/totsiaw/proxma-patches/compare/1.16.0...1.16.1) (2026-10-14)
 
 ### Bug Fixes
