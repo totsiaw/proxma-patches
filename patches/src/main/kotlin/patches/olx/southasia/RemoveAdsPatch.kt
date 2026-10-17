@@ -82,12 +82,12 @@ import app.morphe.patcher.patch.bytecodePatch
  *
  *   $ grep -rn "^\.class public abstract Lcom/naspers/advertising/baxterandroid/f;" --include=*.smali .
  *   smali/com/naspers/advertising/baxterandroid/f.smali:1:.class public abstract Lcom/naspers/advertising/baxterandroid/f;
- *   $ grep -rn "^\.method public static d()Z" --include=*.smali smali*/com/naspers/advertising/baxterandroid
- *   smali/com/naspers/advertising/baxterandroid/f.smali:1167:.method public static d()Z
+ *   $ grep -rn "^\.method public static d()Z" --include=*.smali . | grep baxterandroid
+ *   ./smali/com/naspers/advertising/baxterandroid/f.smali:1167:.method public static d()Z
  *
  * Exactly one class declaration and exactly one `static d()Z` in the whole SDK namespace. The
- * unrelated `f.smali` files under other `baxterandroid/*` packages are different classes and are
- * not reachable by this fingerprint. See AD_REMOVAL.md for the full command list.
+ * unrelated `f.smali` files in other sub-packages under `baxterandroid` are different classes and
+ * are not reachable by this fingerprint. See AD_REMOVAL.md for the full command list.
  */
 internal val southAsiaBaxterEnablePredicateFingerprint = Fingerprint(
     returnType = "Z",
