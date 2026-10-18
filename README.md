@@ -73,6 +73,7 @@ _Supported version(s): 3.3.4.2_
 | **Bypass signature verification** | Disables Simosa's anti-tamper signature check so a re-signed APK launches normally instead of stalling on the splash / "version is not correct" dialog. |
 | **Remove ads & tracking** | Removes every ad (interstitial, banner, daily-reward) and every tracker (Mixpanel, Firebase, Facebook, AppsFlyer) — app events, network sends, ad-SDK requests (Google Ads / AppLovin / AnyMind / Prebid), SDK auto-collection, and the ipify IP leak. The app then phones home only to its own Jazz API. |
 | **Remove daily check-in ads** | Removes the SocialPlus daily check-in / in-feed ads (FeedAdsManager banner + native loaders) and the day-10/20/30 milestone-claim RewardedAd (the award is still granted, just with no ad). Separate from "Remove ads & tracking" to keep that patch Morphe-Manager-safe; enable this one when patching with the desktop CLI. |
+| **Auto check-in & claim daily reward** | Claims the daily check-in reward on its own: opening the daily-rewards screen no longer waits for the check-in ad, the reward is granted right away. The missed-days restore and the day-10/20/30 milestone claim are untouched. |
 
 ### OLX (`com.olx.pk`)
 
