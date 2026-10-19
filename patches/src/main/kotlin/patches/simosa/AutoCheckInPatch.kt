@@ -254,7 +254,7 @@ val autoCheckInPatch = bytecodePatch(
                 invoke-virtual {v6, v5}, LD8/M;->x0(Ljava/lang/String;)Z
                 move-result v5
                 if-eqz v5, :proxma_auto_claim_ladder
-                invoke-virtual {v2, v3, v4}, ${SIMOSA_REWARD_LADDER_VIEW_MODEL}->L1($SIMOSA_REWARD_DAY_ITEM;Ljava/lang/String;)V
+                invoke-virtual {v2, v3, v4}, ${SIMOSA_REWARD_LADDER_VIEW_MODEL}->L1(${SIMOSA_REWARD_DAY_ITEM}Ljava/lang/String;)V
             """.trimIndent(),
             ExternalLabel("proxma_auto_claim_ladder", listenerEnd),
         )
