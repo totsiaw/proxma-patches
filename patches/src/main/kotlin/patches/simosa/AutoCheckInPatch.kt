@@ -59,6 +59,26 @@ private const val SIMOSA_REWARD_STATE =
 /** `Li4/c` — the check-in event type enum; its `a` constant is the "daily check-in" event. */
 private const val CHECK_IN_EVENT_ENUM = "Li4/c;"
 
+// ---------------------------------------------------------------------------------------------
+// Daily Rewards tab (the OLD reward system — the ladder, not the check-in).
+// ---------------------------------------------------------------------------------------------
+
+/** `Le4/N` — the Daily Rewards tab's ViewModel (`DailyRewardViewModel` in its metadata). */
+private const val SIMOSA_REWARD_LADDER_VIEW_MODEL = "Le4/N;"
+
+/**
+ * `Le4/N$d$a` — the anonymous listener `Le4/N` installs as `OnDailyRewardListListeners` to receive
+ * the day ladder (`data.daysList` + `currentDay` + `currentStatus`) from the repository.
+ */
+private const val SIMOSA_REWARD_LIST_LISTENER = "Le4/N\$d\$a;"
+
+/** `Le4/U` — the ladder state (`UnlockRewardState`) the listener publishes into the state flow `Le4/N;->m0`. */
+private const val SIMOSA_REWARD_LADDER_STATE = "Le4/U;"
+
+/** The (unobfuscated) DTO for one rung of the ladder. */
+private const val SIMOSA_REWARD_DAY_ITEM =
+    "Lcom/jazz/jazzworld/data/appmodels/dailyreward/response/DaysListItem;"
+
 internal val dailyCheckInPublishFingerprint = Fingerprint(
     returnType = "Ljava/lang/Object;",
     accessFlags = listOf(AccessFlags.PUBLIC, AccessFlags.FINAL),
@@ -84,6 +104,24 @@ internal val dailyRewardStateRenderFingerprint = Fingerprint(
             reference is MethodReference && reference.definingClass == "Li4/x;" && reference.name == "j"
         } == true
     },
+)
+
+/**
+ * `Le4/N$d$a;->onDailyRewardListSuccess(DailyRewardResponse)V` — the listener that carries the day
+ * ladder into the Daily Rewards tab. It is the only implementation of `OnDailyRewardListListeners`
+ * that runs on the tab's list response: it reads the ViewModel's ladder state flow
+ * (`Le4/N;->m0`), casts it to `Le4/U`, rebuilds it with the fetched `data.daysList` via
+ * `Le4/U;->b(...)` and publishes it back. Its tail is therefore exactly "the ladder is loaded and
+ * today's day is known", which is the moment the tab shows the "Claim it Now!" button.
+ *
+ * The class name is obfuscated but pinned by COMPATIBILITY_SIMOSA (3.3.4.2); the method name is not
+ * obfuscated (it implements the SDK interface), and the parameter/return types are app DTOs.
+ */
+internal val dailyRewardListListenerFingerprint = Fingerprint(
+    returnType = "V",
+    accessFlags = listOf(AccessFlags.PUBLIC),
+    parameters = listOf("Lcom/jazz/jazzworld/data/appmodels/dailyreward/response/DailyRewardResponse;"),
+    custom = { m, c -> c.type == SIMOSA_REWARD_LIST_LISTENER && m.name == "onDailyRewardListSuccess" },
 )
 
 @Suppress("unused")
@@ -167,6 +205,58 @@ val autoCheckInPatch = bytecodePatch(
                 invoke-virtual {p0}, ${SIMOSA_REWARD_VIEW_MODEL}->X1()V
             """.trimIndent(),
             ExternalLabel("proxma_auto_claim_done", renderInstructions.first()),
+        )
+
+        // ---- Part 3: claim the Daily Rewards tab's day on screen load ----
+        // "Daily Check-In" (parts 1-2) and "Daily Rewards" are two separate reward systems behind the
+        // one "Daily Rewards" screen. The Daily Rewards tab renders the MB ladder
+        // (25/50/100/120/150/175/200) and its "Claim it Now!" button drives exactly one call:
+        //     Le4/N;->L1(DaysListItem day, String currentStatus)
+        // which POSTs `gamification/claim` and publishes the result as a new ladder state.
+        // Nothing here waits for the tap: the day is claimed at the tail of the listener that
+        // publishes the ladder, so opening the tab claims the day by itself. The guards are null
+        // checks on the state that listener has just published, and every branch jumps to the
+        // method's own trailing `return-void` — no new control flow is created.
+        val listener = dailyRewardListListenerFingerprint.method
+        val listenerInstructions = listener.instructions.toList()
+        val listenerReturns = listenerInstructions.count { it.opcode == Opcode.RETURN_VOID }
+        check(listenerReturns == 1) { "unexpected daily-rewards listener body" }
+        val listenerEnd = listenerInstructions.last()
+        check(listenerEnd.opcode == Opcode.RETURN_VOID) {
+            "daily-rewards listener does not end with return-void"
+        }
+        // Instance method, one parameter: p0 = the listener, p1 = the response. v2-v6 are the dead
+        // tail of the method's local set (it ends by reading v0/v1 only).
+        check((listener.implementation?.registerCount ?: 0) >= 7) {
+            "unexpected register layout in the daily-rewards listener"
+        }
+
+        listener.addInstructionsWithLabels(
+            listenerInstructions.size - 1,
+            """
+                move-object/from16 v2, p0
+                iget-object v2, v2, $SIMOSA_REWARD_LIST_LISTENER->a:$SIMOSA_REWARD_LADDER_VIEW_MODEL
+                invoke-static {v2}, ${SIMOSA_REWARD_LADDER_VIEW_MODEL}->F1($SIMOSA_REWARD_LADDER_VIEW_MODEL)Lqb/B;
+                move-result-object v3
+                invoke-interface {v3}, Lqb/B;->getValue()Ljava/lang/Object;
+                move-result-object v3
+                if-eqz v3, :proxma_auto_claim_ladder
+                check-cast v3, $SIMOSA_REWARD_LADDER_STATE
+                invoke-virtual {v3}, ${SIMOSA_REWARD_LADDER_STATE}->e()Ljava/lang/String;
+                move-result-object v4
+                if-eqz v4, :proxma_auto_claim_ladder
+                invoke-virtual {v3}, ${SIMOSA_REWARD_LADDER_STATE}->f()$SIMOSA_REWARD_DAY_ITEM
+                move-result-object v3
+                if-eqz v3, :proxma_auto_claim_ladder
+                invoke-virtual {v3}, $SIMOSA_REWARD_DAY_ITEM->getDay()Ljava/lang/String;
+                move-result-object v5
+                sget-object v6, LD8/M;->a:LD8/M;
+                invoke-virtual {v6, v5}, LD8/M;->x0(Ljava/lang/String;)Z
+                move-result v5
+                if-eqz v5, :proxma_auto_claim_ladder
+                invoke-virtual {v2, v3, v4}, ${SIMOSA_REWARD_LADDER_VIEW_MODEL}->L1($SIMOSA_REWARD_DAY_ITEM;Ljava/lang/String;)V
+            """.trimIndent(),
+            ExternalLabel("proxma_auto_claim_ladder", listenerEnd),
         )
     }
 }
