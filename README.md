@@ -116,6 +116,7 @@ _Supported version(s): 4.0.4_
 | Patch | Description |
 |-------|-------------|
 | **Unlock premium (NetMonster)** | Unlocks NetMonster Premium — forces the Adapty entitlement collector to always report premium active, so real-time LTE/NR-NSA location calculation is unlocked, ads are removed, and the status shows Active without a subscription. |
+| **Google Maps API key (NetMonster)** | Optional. The map goes blank on any re-signed build because the key built into the app only works with the original signature. Paste your own free Google Maps key here (Google Cloud Console → enable "Maps SDK for Android" → create key) and the map renders again. Leave it empty and the map is simply left alone. |
 
 ## Troubleshooting
 
