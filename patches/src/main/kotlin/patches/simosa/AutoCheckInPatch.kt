@@ -79,6 +79,12 @@ private const val SIMOSA_REWARD_LADDER_STATE = "Le4/U;"
 private const val SIMOSA_REWARD_DAY_ITEM =
     "Lcom/jazz/jazzworld/data/appmodels/dailyreward/response/DaysListItem;"
 
+/** The ladder's `data` payload — `currentDay`, `currentStatus` and the per-day `claimed` flag. */
+private const val SIMOSA_REWARD_RESPONSE =
+    "Lcom/jazz/jazzworld/data/appmodels/dailyreward/response/DailyRewardResponse;"
+private const val SIMOSA_REWARD_DATA =
+    "Lcom/jazz/jazzworld/data/appmodels/dailyreward/response/Data;"
+
 internal val dailyCheckInPublishFingerprint = Fingerprint(
     returnType = "Ljava/lang/Object;",
     accessFlags = listOf(AccessFlags.PUBLIC, AccessFlags.FINAL),
@@ -213,10 +219,22 @@ val autoCheckInPatch = bytecodePatch(
         // (25/50/100/120/150/175/200) and its "Claim it Now!" button drives exactly one call:
         //     Le4/N;->L1(DaysListItem day, String currentStatus)
         // which POSTs `gamification/claim` and publishes the result as a new ladder state.
-        // Nothing here waits for the tap: the day is claimed at the tail of the listener that
-        // publishes the ladder, so opening the tab claims the day by itself. The guards are null
-        // checks on the state that listener has just published, and every branch jumps to the
-        // method's own trailing `return-void` — no new control flow is created.
+        //
+        // This listener is the moment the tab knows the ladder: it stores the response in the
+        // ViewModel (`o2`) and republishes the ladder state, whose two day slots are "today's rung"
+        // (field g, read by `f()`) and "the rung the user selected" (field f, read by `i()`), plus the
+        // response's `currentStatus` (field j, read by `e()`). The button's own call passes exactly
+        // `i()` / `data.currentStatus`; for the automatic case the right rung is today's — `f()`.
+        //
+        // Two things make the automated call safe to fire on every list load:
+        //  - `L1` is itself gated on `Le4/N;->a0` (`true` = today's reward is already claimed). That
+        //    flag is recomputed asynchronously from the response, so at this point it can still hold
+        //    the previous value. We therefore mirror what the app's own computation would set —
+        //    `a0 = (data.claimed == "true")` — via the public setter `n2(Z)` before calling `L1`.
+        //  - The guard below bails out when the ladder has no rung for today, and when `data.claimed`
+        //    is already `"true"`, so a re-fetch after a successful claim cannot claim twice.
+        //
+        // Every branch jumps to the method's own trailing `return-void` — no new control flow.
         val listener = dailyRewardListListenerFingerprint.method
         val listenerInstructions = listener.instructions.toList()
         val listenerReturns = listenerInstructions.count { it.opcode == Opcode.RETURN_VOID }
@@ -225,9 +243,9 @@ val autoCheckInPatch = bytecodePatch(
         check(listenerEnd.opcode == Opcode.RETURN_VOID) {
             "daily-rewards listener does not end with return-void"
         }
-        // Instance method, one parameter: p0 = the listener, p1 = the response. v2-v6 are the dead
-        // tail of the method's local set (it ends by reading v0/v1 only).
-        check((listener.implementation?.registerCount ?: 0) >= 7) {
+        // Instance method, one parameter: p0 = the listener, p1 = the response (`.registers 24`, so
+        // p0/p1 are v22/v21 and v2-v8 are dead locals at the tail).
+        check((listener.implementation?.registerCount ?: 0) >= 9) {
             "unexpected register layout in the daily-rewards listener"
         }
 
@@ -235,26 +253,38 @@ val autoCheckInPatch = bytecodePatch(
             listenerInstructions.size - 1,
             """
                 move-object/from16 v2, p0
+                move-object/from16 v4, p1
                 iget-object v2, v2, $SIMOSA_REWARD_LIST_LISTENER->a:$SIMOSA_REWARD_LADDER_VIEW_MODEL
-                invoke-static {v2}, ${SIMOSA_REWARD_LADDER_VIEW_MODEL}->F1($SIMOSA_REWARD_LADDER_VIEW_MODEL)Lqb/B;
+                invoke-static {v2}, ${SIMOSA_REWARD_LADDER_VIEW_MODEL}->F1(${SIMOSA_REWARD_LADDER_VIEW_MODEL})Lqb/B;
                 move-result-object v3
                 invoke-interface {v3}, Lqb/B;->getValue()Ljava/lang/Object;
                 move-result-object v3
                 if-eqz v3, :proxma_auto_claim_ladder
                 check-cast v3, $SIMOSA_REWARD_LADDER_STATE
-                invoke-virtual {v3}, ${SIMOSA_REWARD_LADDER_STATE}->e()Ljava/lang/String;
-                move-result-object v4
-                if-eqz v4, :proxma_auto_claim_ladder
                 invoke-virtual {v3}, ${SIMOSA_REWARD_LADDER_STATE}->f()$SIMOSA_REWARD_DAY_ITEM
-                move-result-object v3
-                if-eqz v3, :proxma_auto_claim_ladder
-                invoke-virtual {v3}, $SIMOSA_REWARD_DAY_ITEM->getDay()Ljava/lang/String;
                 move-result-object v5
-                sget-object v6, LD8/M;->a:LD8/M;
-                invoke-virtual {v6, v5}, LD8/M;->x0(Ljava/lang/String;)Z
-                move-result v5
                 if-eqz v5, :proxma_auto_claim_ladder
-                invoke-virtual {v2, v3, v4}, ${SIMOSA_REWARD_LADDER_VIEW_MODEL}->L1(${SIMOSA_REWARD_DAY_ITEM}Ljava/lang/String;)V
+                invoke-virtual {v5}, $SIMOSA_REWARD_DAY_ITEM->getDay()Ljava/lang/String;
+                move-result-object v6
+                if-eqz v6, :proxma_auto_claim_ladder
+                if-eqz v4, :proxma_auto_claim_ladder
+                invoke-virtual {v4}, $SIMOSA_REWARD_RESPONSE->getData()$SIMOSA_REWARD_DATA
+                move-result-object v6
+                if-eqz v6, :proxma_auto_claim_ladder
+                invoke-virtual {v6}, $SIMOSA_REWARD_DATA->getClaimed()Ljava/lang/String;
+                move-result-object v7
+                const-string v8, "true"
+                invoke-static {v7, v8}, Lkotlin/jvm/internal/Intrinsics;->areEqual(Ljava/lang/Object;Ljava/lang/Object;)Z
+                move-result v7
+                if-eqz v7, :proxma_auto_claim_ladder
+                invoke-virtual {v6}, $SIMOSA_REWARD_DATA->getCurrentStatus()Ljava/lang/String;
+                move-result-object v7
+                if-eqz v7, :proxma_auto_claim_status
+                const-string v7, ""
+                :proxma_auto_claim_status
+                const/4 v8, 0x0
+                invoke-virtual {v2, v8}, ${SIMOSA_REWARD_LADDER_VIEW_MODEL}->n2(Z)V
+                invoke-virtual {v2, v5, v7}, ${SIMOSA_REWARD_LADDER_VIEW_MODEL}->L1(${SIMOSA_REWARD_DAY_ITEM}Ljava/lang/String;)V
             """.trimIndent(),
             ExternalLabel("proxma_auto_claim_ladder", listenerEnd),
         )
