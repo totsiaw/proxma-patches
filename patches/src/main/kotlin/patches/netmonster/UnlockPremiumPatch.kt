@@ -58,11 +58,17 @@ internal val premiumEmitFingerprint = Fingerprint(
  * How to get one (free): Google Cloud Console → enable "Maps SDK for Android" → create an API key.
  * Either leave it unrestricted, or restrict it to application `cz.mroczis.netmonster` + the SHA-1 of the
  * keystore you sign the patched APK with. Then pass it at patch time:
- *   morphe-cli patch … -e "Unlock premium (NetMonster)" -O maps-api-key=AIza...
+ *   morphe-cli patch … -e "Google Maps API key (NetMonster)" -O maps-api-key=AIza...
+ *
+ * ⚠️ This MUST stay a named patch. While it was an unnamed private resourcePatch the option was only
+ * reachable from the CLI: `list-patches --with-options` showed options: [] for the premium patch and
+ * Manager had no field to type a key into, so map users had no fix at all (issue #32).
  */
-private val fixMapsApiKeyPatch = resourcePatch(
+@Suppress("unused")
+val netmonsterMapsKeyPatch = resourcePatch(
+    name = "Google Maps API key (NetMonster)",
     description = "Optional: write YOUR OWN Google Maps API key so the map renders after re-signing " +
-        "(NetMonster's built-in key is cert-locked). No key = map left as-is.",
+        "(NetMonster's built-in key is cert-locked). Leave the key empty to leave the map as-is.",
 ) {
     compatibleWith(COMPATIBILITY_NETMONSTER)
 
@@ -101,8 +107,8 @@ val unlockPremiumPatch = bytecodePatch(
         "the status shows Active without a subscription.",
 ) {
     compatibleWith(COMPATIBILITY_NETMONSTER)
-    // Optional map-key fix (no-op unless the user supplies -O maps-api-key=…).
-    dependsOn(fixMapsApiKeyPatch)
+    // Optional map-key fix (no-op unless the user supplies -O maps-api-key=… / fills the field in Manager).
+    dependsOn(netmonsterMapsKeyPatch)
 
     execute {
         // (1) emit-force: whenever the Adapty collector runs, force the computed premium flag true.
