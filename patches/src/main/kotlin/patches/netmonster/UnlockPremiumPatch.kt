@@ -33,6 +33,30 @@ import org.w3c.dom.Element
  */
 private const val SUBSCRIPTION = "Lcom/adapty/models/AdaptyProfile\$Subscription;"
 
+/**
+ * The settings "NetMonster Premium" card does NOT read the premium boolean patched above. It renders
+ * from a nullable expiry DATE: non-null → "Active till <date>", null → the PURCHASE button. That date is
+ * derived from the Adapty subscription list, which is empty for anyone who never subscribed — so on a
+ * re-signed build of 5.0.x the card can never reach the "active" branch no matter what the boolean says.
+ * That is exactly what issue #32 reports (1.18.1, 5.0.1, both patches ticked, card still offers PURCHASE).
+ *
+ * Anchor: the composable that takes the expiry date as its first parameter and formats it for display
+ * (`OffsetDateTime.toInstant()` + `SimpleDateFormat.<init>`). Unique in 5.0.0 and 5.0.1, and needs no
+ * obfuscated name. Kept optional (see the execute block) so a build whose card shape differs — e.g. the
+ * 4.0.x line, where the card already behaved — is left exactly as it was.
+ */
+internal val premiumCardFingerprint = Fingerprint(
+    returnType = "V",
+    custom = { m, _ ->
+        m.parameterTypes.firstOrNull() == "Ljava/time/OffsetDateTime;" && run {
+            val refs = (m.implementation?.instructions ?: emptyList())
+                .mapNotNull { (it as? ReferenceInstruction)?.reference as? MethodReference }
+            refs.any { it.definingClass == "Ljava/time/OffsetDateTime;" && it.name == "toInstant" } &&
+                refs.any { it.definingClass == "Ljava/text/SimpleDateFormat;" && it.name == "<init>" }
+        }
+    },
+)
+
 internal val premiumEmitFingerprint = Fingerprint(
     returnType = "Ljava/lang/Object;",
     // The FlowCollector that decides premium: the only emit() calling both Adapty subscription checks
@@ -203,5 +227,32 @@ val unlockPremiumPatch = bytecodePatch(
         )
         // The flavor-flag flip itself (flagIdx is unaffected by the return-site insertion above).
         ctor.addInstructions(flagIdx + 1, "const/4 v$flagReg, 0x1")
+
+        // (4) THE PREMIUM CARD: force a future expiry date so the settings card renders as owned.
+        // The card branches on this date being null (null → PURCHASE button, non-null → "Active till …"),
+        // and the date is computed from the Adapty subscription list, which stays empty on a build that
+        // never had a subscription. Injecting the date at the card composable's entry is enough and is
+        // independent of anything Adapty delivers later. Optional by design: if the shape does not match
+        // exactly one method (e.g. a future release, or the 4.0.x card), the patch leaves it untouched
+        // rather than failing the whole run.
+        val card = runCatching { premiumCardFingerprint.methodOrNull }.getOrNull()
+        if (card != null) {
+            // Need three contiguous scratch registers for the long argument, and p0 must be writable.
+            val scratch = (card.implementation?.registerCount ?: 0) - card.parameterTypes.size
+            card.addInstructions(
+                0,
+                if (scratch >= 3) """
+                    invoke-static {}, Ljava/time/OffsetDateTime;->now()Ljava/time/OffsetDateTime;
+                    move-result-object v0
+                    const-wide/16 v1, 0x64
+                    invoke-virtual/range {v0 .. v2}, Ljava/time/OffsetDateTime;->plusYears(J)Ljava/time/OffsetDateTime;
+                    move-result-object v0
+                    move-object/from16 p0, v0
+                """.trimIndent() else """
+                    invoke-static {}, Ljava/time/OffsetDateTime;->now()Ljava/time/OffsetDateTime;
+                    move-result-object p0
+                """.trimIndent(),
+            )
+        }
     }
 }
