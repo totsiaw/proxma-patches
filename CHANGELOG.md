@@ -1,3 +1,9 @@
+## [1.21.0](https://github.com/totsiaw/proxma-patches/compare/1.20.0...1.21.0) (2026-10-20)
+
+### New Features
+
+* **simosa:** support Simosa 3.3.5 ([f9cbd96](https://github.com/totsiaw/proxma-patches/commit/f9cbd96275ebff5e8b46098cdf35a45f499ce586))
+
 ## [1.20.0](https://github.com/totsiaw/proxma-patches/compare/1.19.1...1.20.0) (2026-10-20)
 
 ### Bug Fixes
