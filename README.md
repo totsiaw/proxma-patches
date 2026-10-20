@@ -111,7 +111,7 @@ _Supported version(s): 5.19.19.112_
 
 ### NetMonster (`cz.mroczis.netmonster`)
 
-_Supported version(s): 4.0.4_
+_Supported version(s): 4.0.4, 5.0.0, 5.0.1_
 
 | Patch | Description |
 |-------|-------------|
