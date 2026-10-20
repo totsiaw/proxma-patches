@@ -13,6 +13,10 @@ internal val COMPATIBILITY_SIMOSA = Compatibility(
     signatures = emptySet(),
     targets = listOf(
         AppTarget(
+            version = "3.3.5",
+            minSdk = 23,
+        ),
+        AppTarget(
             version = "3.3.4.2",
             minSdk = 23,
         ),
