@@ -1,7 +1,7 @@
 {
-  "created_at": "2026-10-20T15:04:51",
-  "description": "## [1.19.0](https://github.com/totsiaw/proxma-patches/compare/1.18.1...1.19.0) (2026-10-20)\n\n### Bug Fixes\n\n* **simosa:** claim the daily rung when the rewards screen is shown ([3c17535](https://github.com/totsiaw/proxma-patches/commit/3c1753563f83e500b53062d0abd940db1830cfde)), closes [#29](https://github.com/totsiaw/proxma-patches/issues/29)\n\n### New Features\n\n* **olx:** remove the item-detail (PDP) banner ad slots ([82e20dd](https://github.com/totsiaw/proxma-patches/commit/82e20dd0a2c9182fbcd0c08f3aeff575fb8e176f))",
-  "download_url": "https://github.com/totsiaw/proxma-patches/releases/download/1.19.0/patches-1.19.0.mpp",
+  "created_at": "2026-10-20T15:35:32",
+  "description": "## [1.19.1](https://github.com/totsiaw/proxma-patches/compare/1.19.0...1.19.1) (2026-10-20)\n\n### Bug Fixes\n\n* **netmonster:** show premium as owned on 5.0.x (card reads a date, not the flag) ([fb83d9c](https://github.com/totsiaw/proxma-patches/commit/fb83d9cec781108223558219d82a91bdbc99173b)), closes [#32](https://github.com/totsiaw/proxma-patches/issues/32)",
+  "download_url": "https://github.com/totsiaw/proxma-patches/releases/download/1.19.1/patches-1.19.1.mpp",
   "signature_download_url": "",
-  "version": "1.19.0"
+  "version": "1.19.1"
 }
