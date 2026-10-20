@@ -1,3 +1,9 @@
+## [1.19.1](https://github.com/totsiaw/proxma-patches/compare/1.19.0...1.19.1) (2026-10-20)
+
+### Bug Fixes
+
+* **netmonster:** show premium as owned on 5.0.x (card reads a date, not the flag) ([fb83d9c](https://github.com/totsiaw/proxma-patches/commit/fb83d9cec781108223558219d82a91bdbc99173b)), closes [#32](https://github.com/totsiaw/proxma-patches/issues/32)
+
 ## [1.19.0](https://github.com/totsiaw/proxma-patches/compare/1.18.1...1.19.0) (2026-10-20)
 
 ### Bug Fixes
