@@ -90,6 +90,7 @@ _Supported version(s): 4.0.4, 5.0.0, 5.0.1_
 
 | Patch | Description |
 |-------|-------------|
+| **Bypass Play license check (NetMonster)** | Removes Google Play's PairIP license check so a re-signed NetMonster 5.0.x build runs instead of being blocked by the "Get this app from Play" screen. Without it, patched 5.0.0 / 5.0.1 open the Play Store on launch and close. No effect on 4.0.4, which has no such check. |
 | **Google Maps API key (NetMonster)** | Optional: write YOUR OWN Google Maps API key so the map renders after re-signing (NetMonster's built-in key is cert-locked). Leave the key empty to leave the map as-is. |
 | **Unlock premium (NetMonster)** | Unlocks NetMonster Premium — forces the Adapty entitlement collector to always report premium active, so real-time LTE/NR-NSA location calculation is unlocked, ads are removed, and the status shows Active without a subscription. |
 
