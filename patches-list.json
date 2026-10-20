@@ -1,6 +1,6 @@
 {
   "NOTE": "Do NOT manually edit this file. This file is automatically updated when semantic release (release.yml) runs. Manually editing this file can break your releases and break third party tools that use this file.",
-  "version": "1.18.0",
+  "version": "1.18.1",
   "patches": [
     {
       "name": "Auto check-in & claim daily reward",
@@ -125,6 +125,46 @@
               "versionCodes": null,
               "isExperimental": false,
               "minSdk": 24,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
+      "name": "Bypass Play license check (NetMonster)",
+      "description": "Removes Google Play's PairIP license check so a re-signed NetMonster 5.0.x build runs instead of being blocked by the \"Get this app from Play\" screen. Without it, patched 5.0.0 / 5.0.1 open the Play Store on launch and close. No effect on 4.0.4, which has no such check.",
+      "default": true,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "cz.mroczis.netmonster",
+          "name": "NetMonster",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#00BCD4",
+          "signatures": [],
+          "targets": [
+            {
+              "version": "4.0.4",
+              "versionCodes": null,
+              "isExperimental": false,
+              "minSdk": 27,
+              "description": null
+            },
+            {
+              "version": "5.0.0",
+              "versionCodes": null,
+              "isExperimental": false,
+              "minSdk": 32,
+              "description": null
+            },
+            {
+              "version": "5.0.1",
+              "versionCodes": null,
+              "isExperimental": false,
+              "minSdk": 32,
               "description": null
             }
           ]
