@@ -1,3 +1,9 @@
+## [1.18.1](https://github.com/totsiaw/proxma-patches/compare/1.18.0...1.18.1) (2026-10-20)
+
+### Bug Fixes
+
+* **netmonster:** bypass Google Play PairIP license check on 5.0.x ([b78b70c](https://github.com/totsiaw/proxma-patches/commit/b78b70c4c60607b6c394336e8a0df2cf5368f2d7))
+
 ## [1.18.0](https://github.com/totsiaw/proxma-patches/compare/1.17.0...1.18.0) (2026-10-20)
 
 ### Bug Fixes
