@@ -14,6 +14,17 @@ Morphe patch bundle for **My Telenor**, **Investify**, **Simosa** (Jazz), **OLX*
 
 ## Patches
 
+### Simosa (`com.jazz.jazzworld`)
+
+_Supported version(s): 3.3.4.2_
+
+| Patch | Description |
+|-------|-------------|
+| **Auto check-in & claim daily reward** | Claims the daily check-in reward on its own: opening the daily-rewards screen no longer waits for the check-in ad, the reward is granted right away. The missed-days restore and the day-10/20/30 milestone claim are untouched. |
+| **Bypass signature verification** | Disables Simosa's anti-tamper signature check so a re-signed APK launches normally instead of stalling on the splash / "version is not correct" dialog. |
+| **Remove ads & tracking** | Removes every ad (interstitial, banner, daily-reward) and every tracker (Mixpanel, Firebase, Facebook, AppsFlyer) — app events, network sends, ad-SDK requests (Google Ads / AppLovin / AnyMind / Prebid), SDK auto-collection, and the ipify IP leak. The app then phones home only to its own Jazz API. |
+| **Remove daily check-in ads** | Removes the SocialPlus daily check-in / in-feed ads (FeedAdsManager banner + native loaders) and the day-10/20/30 milestone-claim RewardedAd (the award is still granted, just with no ad). Separate from "Remove ads & tracking" to keep that patch Morphe-Manager-safe; enable this one when patching with the desktop CLI. |
+
 ### My Telenor (`com.telenor.pakistan.mytelenor`)
 
 _Supported version(s): 4.2.62_
@@ -64,17 +75,6 @@ _Supported version(s): 3.0.1_
 | **Bypass license verification** | Bypasses Google Play's PairIP license check so a re-signed Safar build runs instead of being blocked by the "Get this app from Play" paywall or a "Something went wrong" dialog. |
 | **Remove ads** | Removes Safar's AdMob banner, interstitial and app-open ads by stubbing the react-native-google-mobile-ads load funnels (no ad is requested, so none renders). User-initiated rewarded ads are left working. |
 
-### Simosa (`com.jazz.jazzworld`)
-
-_Supported version(s): 3.3.4.2_
-
-| Patch | Description |
-|-------|-------------|
-| **Bypass signature verification** | Disables Simosa's anti-tamper signature check so a re-signed APK launches normally instead of stalling on the splash / "version is not correct" dialog. |
-| **Remove ads & tracking** | Removes every ad (interstitial, banner, daily-reward) and every tracker (Mixpanel, Firebase, Facebook, AppsFlyer) — app events, network sends, ad-SDK requests (Google Ads / AppLovin / AnyMind / Prebid), SDK auto-collection, and the ipify IP leak. The app then phones home only to its own Jazz API. |
-| **Remove daily check-in ads** | Removes the SocialPlus daily check-in / in-feed ads (FeedAdsManager banner + native loaders) and the day-10/20/30 milestone-claim RewardedAd (the award is still granted, just with no ad). Separate from "Remove ads & tracking" to keep that patch Morphe-Manager-safe; enable this one when patching with the desktop CLI. |
-| **Auto check-in & claim daily reward** | Claims the daily check-in reward on its own: opening the daily-rewards screen no longer waits for the check-in ad, the reward is granted right away. The missed-days restore and the day-10/20/30 milestone claim are untouched. |
-
 ### OLX (`com.olx.pk`)
 
 _Supported version(s): 18.8.0_
@@ -84,6 +84,15 @@ _Supported version(s): 18.8.0_
 | **Force dark mode** | Forces OLX into dark (night) mode regardless of the system theme, using the app's built-in -night resources via UiModeManager.setApplicationNightMode at startup. |
 | **Remove ads** | Removes native feed ads (Google GMA), the full-height ad slot, and the "Buy with Delivery" promo section (bar, cards and View all) from OLX. Pinned to the 18.8.0 build (matches that build's obfuscated feed classes). |
 
+### NetMonster (`cz.mroczis.netmonster`)
+
+_Supported version(s): 4.0.4, 5.0.0, 5.0.1_
+
+| Patch | Description |
+|-------|-------------|
+| **Google Maps API key (NetMonster)** | Optional: write YOUR OWN Google Maps API key so the map renders after re-signing (NetMonster's built-in key is cert-locked). Leave the key empty to leave the map as-is. |
+| **Unlock premium (NetMonster)** | Unlocks NetMonster Premium — forces the Adapty entitlement collector to always report premium active, so real-time LTE/NR-NSA location calculation is unlocked, ads are removed, and the status shows Active without a subscription. |
+
 ### OLX India (`com.olx.southasia`)
 
 _Supported version(s): 20.07.001_
@@ -92,6 +101,14 @@ _Supported version(s): 20.07.001_
 |-------|-------------|
 | **Remove Elite promotions** | Removes the promoted Elite seller cards and the buyer-matchmaking recommendation slot from OLX India's listing feed — OLX's own paid placements, which the ad-removal patch does not cover. |
 | **Remove ads** | Removes ads from OLX India by disabling the in-house Baxter ad SDK at its own enable predicate (com.naspers.advertising.baxterandroid.f.d()). Every ad path — native feed, full-page, interstitial, swipe, adpv and the ad view itself — already checks this predicate, so disabling it stops the ad requests rather than just hiding the boxes. |
+
+### inDrive (`sinet.startup.inDriver`)
+
+_Supported version(s): 5.188.0, 5.189.0_
+
+| Patch | Description |
+|-------|-------------|
+| **Remove ads** | Removes inDrive's Google ads — the banner, the card shown during and after a ride, and the full-screen ones — by switching the app's own Google Ads enable flags off, so it never asks Google for an ad. Rides, chat, payments and inDrive's own promo codes keep working. |
 
 ### MTProxy (`com.sdev.mtproxy`)
 
@@ -109,15 +126,6 @@ _Supported version(s): 5.19.19.112_
 |-------|-------------|
 | **Remove ads & tracking** | Removes every ad (AdMob) and every tracker (Firebase Analytics, AppsFlyer, Facebook, TikTok, and the Veridium SDK's own Google Analytics) — event sends, full SDK init (AppsFlyer init, TikTok initializeSdk/startTrack, MobileAds.initialize), and auto-collection. Pushwoosh push is left intact. The app then phones home only to its own Zong API. |
 | **Unlock daily reward (skip ad)** | Claim MyZong's daily reward with no 'watch ad' popup and no ad. Forces the reward-bubble tap to take the app's own direct-claim branch (the same claim call the post-ad path makes), upstream of both the popup and the rewarded ad. |
-
-### NetMonster (`cz.mroczis.netmonster`)
-
-_Supported version(s): 4.0.4, 5.0.0, 5.0.1_
-
-| Patch | Description |
-|-------|-------------|
-| **Unlock premium (NetMonster)** | Unlocks NetMonster Premium — forces the Adapty entitlement collector to always report premium active, so real-time LTE/NR-NSA location calculation is unlocked, ads are removed, and the status shows Active without a subscription. |
-| **Google Maps API key (NetMonster)** | Optional. The map goes blank on any re-signed build because the key built into the app only works with the original signature. Paste your own free Google Maps key here (Google Cloud Console → enable "Maps SDK for Android" → create key) and the map renders again. Leave it empty and the map is simply left alone. |
 
 ## Troubleshooting
 
