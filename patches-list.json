@@ -626,6 +626,20 @@
               "isExperimental": false,
               "minSdk": 27,
               "description": null
+            },
+            {
+              "version": "5.0.0",
+              "versionCodes": null,
+              "isExperimental": false,
+              "minSdk": 32,
+              "description": null
+            },
+            {
+              "version": "5.0.1",
+              "versionCodes": null,
+              "isExperimental": false,
+              "minSdk": 32,
+              "description": null
             }
           ]
         }
