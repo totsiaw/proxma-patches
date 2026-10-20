@@ -1,3 +1,9 @@
+## [1.22.0](https://github.com/totsiaw/proxma-patches/compare/1.21.0...1.22.0) (2026-10-20)
+
+### New Features
+
+* **simosa:** add pure black (AMOLED) background patch ([4788869](https://github.com/totsiaw/proxma-patches/commit/47888698a54a5de0f824da52ff753b7cb393ac13)), closes [#000000](https://github.com/totsiaw/proxma-patches/issues/000000)
+
 ## [1.21.0](https://github.com/totsiaw/proxma-patches/compare/1.20.0...1.21.0) (2026-10-20)
 
 ### New Features
