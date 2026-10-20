@@ -1,7 +1,7 @@
 {
-  "created_at": "2026-10-20T15:46:17",
-  "description": "## [1.20.0](https://github.com/totsiaw/proxma-patches/compare/1.19.1...1.20.0) (2026-10-20)\n\n### Bug Fixes\n\n* **netmonster:** expose the Google Maps key option in the patch list ([f88ad0e](https://github.com/totsiaw/proxma-patches/commit/f88ad0e2f959846caa9bc18f88ae4d5b60610892))\n* **netmonster:** retarget premium patch to 5.0.0 / 5.0.1 ([c81d553](https://github.com/totsiaw/proxma-patches/commit/c81d553509f26bafa707fbb00dda26dc2b91a25c))\n* **simosa:** claim the daily check-in reward as soon as the state loads ([03b9885](https://github.com/totsiaw/proxma-patches/commit/03b988599b51e3c582063845416b2623b3908049))\n* **simosa:** claim the daily rung when the rewards screen is shown ([2183c29](https://github.com/totsiaw/proxma-patches/commit/2183c29575f24f67bfeed8906740c932ae23ece8)), closes [#29](https://github.com/totsiaw/proxma-patches/issues/29)\n\n### New Features\n\n* **indrive:** add remove-ads patch for sinet.startup.inDriver 5.188.0 / 5.189.0 ([3d4c6f8](https://github.com/totsiaw/proxma-patches/commit/3d4c6f885c478eae8e545a27dd0ad1b1f2a9ae41))\n* **olx:** remove the item-detail (PDP) banner ad slots ([c2833a3](https://github.com/totsiaw/proxma-patches/commit/c2833a37a9d6cebbd842f6a05300998d5c1e9e8c))",
-  "download_url": "https://github.com/totsiaw/proxma-patches/releases/download/1.20.0/patches-1.20.0.mpp",
+  "created_at": "2026-10-20T15:50:57",
+  "description": "## [1.21.0](https://github.com/totsiaw/proxma-patches/compare/1.20.0...1.21.0) (2026-10-20)\n\n### New Features\n\n* **simosa:** support Simosa 3.3.5 ([f9cbd96](https://github.com/totsiaw/proxma-patches/commit/f9cbd96275ebff5e8b46098cdf35a45f499ce586))",
+  "download_url": "https://github.com/totsiaw/proxma-patches/releases/download/1.21.0/patches-1.21.0.mpp",
   "signature_download_url": "",
-  "version": "1.20.0"
+  "version": "1.21.0"
 }

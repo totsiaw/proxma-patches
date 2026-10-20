@@ -16,7 +16,7 @@ Morphe patch bundle for **My Telenor**, **Investify**, **Simosa** (Jazz), **OLX*
 
 ### Simosa (`com.jazz.jazzworld`)
 
-_Supported version(s): 3.3.4.2_
+_Supported version(s): 3.3.5, 3.3.4.2_
 
 | Patch | Description |
 |-------|-------------|
