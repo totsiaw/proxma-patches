@@ -16,5 +16,13 @@ internal val COMPATIBILITY_NETMONSTER = Compatibility(
             version = "4.0.4",
             minSdk = 27,
         ),
+        AppTarget(
+            version = "5.0.0",
+            minSdk = 32,
+        ),
+        AppTarget(
+            version = "5.0.1",
+            minSdk = 32,
+        ),
     ),
 )

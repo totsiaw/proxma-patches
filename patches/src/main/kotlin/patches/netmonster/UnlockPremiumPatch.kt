@@ -35,13 +35,21 @@ private const val SUBSCRIPTION = "Lcom/adapty/models/AdaptyProfile\$Subscription
 
 internal val premiumEmitFingerprint = Fingerprint(
     returnType = "Ljava/lang/Object;",
-    // The FlowCollector that decides premium: the only emit() calling both Adapty subscription checks.
+    // The FlowCollector that decides premium: the only emit() calling both Adapty subscription checks
+    // AND boxing the computed flag exactly once. The "exactly once" half is load-bearing from 5.0.x on:
+    // those builds add a second emit() that also reads both Adapty checks (a ~6k-instruction state
+    // machine) but boxes the flag TWICE, so the two-Adapty-checks predicate alone is ambiguous and the
+    // patcher cannot pick a method. The premium collector boxes once.
     custom = { m, _ ->
         m.name == "emit" && run {
             val refs = (m.implementation?.instructions ?: emptyList())
                 .mapNotNull { (it as? ReferenceInstruction)?.reference as? MethodReference }
             refs.any { it.definingClass == SUBSCRIPTION && it.name == "isActive" } &&
-                refs.any { it.definingClass == SUBSCRIPTION && it.name == "isInGracePeriod" }
+                refs.any { it.definingClass == SUBSCRIPTION && it.name == "isInGracePeriod" } &&
+                refs.count {
+                    it.definingClass == "Ljava/lang/Boolean;" && it.name == "valueOf" &&
+                        it.parameterTypes.firstOrNull() == "Z"
+                } == 1
         }
     },
 )
@@ -130,18 +138,33 @@ val unlockPremiumPatch = bytecodePatch(
         //   - the MutableStateFlow type = the class of emit's compareAndSet ((Object,Object)Z) call,
         //   - the premium field = the field read in emit whose type is that MSF (its class = the repo),
         //   - setValue = that MSF class's instance (Object)V method (the StateFlow value setter).
-        val msfType = emitInsns
+        val emitRefs = emitInsns
             .mapNotNull { (it as? ReferenceInstruction)?.reference as? MethodReference }
-            .first { it.returnType == "Z" && it.parameterTypes.size == 2 && it.parameterTypes.all { p -> p == "Ljava/lang/Object;" } }
-            .definingClass
+        // The StateFlow the collector publishes into. Two shapes exist across versions:
+        //   4.0.x — emit updates it through compareAndSet(Object,Object)Z;
+        //   5.0.x — emit calls the value setter (Object)V directly (no compareAndSet in emit at all).
+        // Either one names the StateFlow type, so try the 4.0.x shape first and fall back to 5.0.x.
+        val msfType = emitRefs.firstOrNull {
+            it.returnType == "Z" && it.parameterTypes.size == 2 &&
+                it.parameterTypes.all { p -> p == "Ljava/lang/Object;" }
+        }?.definingClass
+            ?: emitRefs.firstOrNull {
+                it.returnType == "V" && it.parameterTypes.size == 1 &&
+                    it.parameterTypes[0] == "Ljava/lang/Object;"
+            }?.definingClass
+            ?: error("NetMonster: could not derive the premium StateFlow type from emit()")
         val premiumField = emitInsns
             .mapNotNull { (it as? ReferenceInstruction)?.reference as? FieldReference }
             .first { it.type == msfType }
         val repoType = premiumField.definingClass
-        val setValue = mutableClassDefBy(msfType).methods.first {
+        // Prefer the setter emit itself calls (name can drift); else look it up on the StateFlow type.
+        val setValue = emitRefs.firstOrNull {
+            it.definingClass == msfType && it.returnType == "V" &&
+                it.parameterTypes.size == 1 && it.parameterTypes[0] == "Ljava/lang/Object;"
+        }?.name ?: mutableClassDefBy(msfType).methods.first {
             it.name != "<init>" && it.parameterTypes.size == 1 &&
                 it.parameterTypes[0] == "Ljava/lang/Object;" && it.returnType == "V"
-        }
+        }.name
 
         // The repo constructor (the one that wires Adapty's profile listener).
         val repo = mutableClassDefBy(repoType)
@@ -175,7 +198,7 @@ val unlockPremiumPatch = bytecodePatch(
             """
                 iget-object v0, p0, $repoType->${premiumField.name}:$msfType
                 sget-object v1, Ljava/lang/Boolean;->TRUE:Ljava/lang/Boolean;
-                invoke-virtual {v0, v1}, $msfType->${setValue.name}(Ljava/lang/Object;)V
+                invoke-virtual {v0, v1}, $msfType->$setValue(Ljava/lang/Object;)V
             """.trimIndent(),
         )
         // The flavor-flag flip itself (flagIdx is unaffected by the return-site insertion above).
