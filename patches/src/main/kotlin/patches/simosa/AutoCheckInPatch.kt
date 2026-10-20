@@ -139,6 +139,10 @@ internal val dailyRewardListListenerFingerprint = Fingerprint(
  * shape (`!isNonJazzLogin && isPrepaid && isCurrentUserParrent`). For an account that takes another
  * route (the eligibility / claim-status refresh) that callback never runs, so nothing is attempted:
  * no claim, no message, no error — exactly the report on issue #29.
+ *
+ * The lambda's numbering inside `Le4/J` is compiler-generated and drifts between releases (3.3.4.2:
+ * `J$c`, 3.3.5: `J$d`), so the anchor pins the enclosing class and the exact 7-parameter signature
+ * plus the screen-name literal, never the numbered subclass itself.
  */
 internal val dailyRewardScreenShownFingerprint = Fingerprint(
     returnType = "Lkotlin/Unit;",
@@ -153,7 +157,7 @@ internal val dailyRewardScreenShownFingerprint = Fingerprint(
         "Le4/a;",
     ),
     filters = listOf(string("Daily Reward Screen")),
-    custom = { m, c -> c.type == "Le4/J\$c;" && m.name == "n" },
+    custom = { m, c -> c.type.startsWith("Le4/J\$") && m.name == "n" },
 )
 
 @Suppress("unused")
