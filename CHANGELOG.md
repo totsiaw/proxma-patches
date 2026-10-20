@@ -1,3 +1,17 @@
+## [1.20.0](https://github.com/totsiaw/proxma-patches/compare/1.19.1...1.20.0) (2026-10-20)
+
+### Bug Fixes
+
+* **netmonster:** expose the Google Maps key option in the patch list ([f88ad0e](https://github.com/totsiaw/proxma-patches/commit/f88ad0e2f959846caa9bc18f88ae4d5b60610892))
+* **netmonster:** retarget premium patch to 5.0.0 / 5.0.1 ([c81d553](https://github.com/totsiaw/proxma-patches/commit/c81d553509f26bafa707fbb00dda26dc2b91a25c))
+* **simosa:** claim the daily check-in reward as soon as the state loads ([03b9885](https://github.com/totsiaw/proxma-patches/commit/03b988599b51e3c582063845416b2623b3908049))
+* **simosa:** claim the daily rung when the rewards screen is shown ([2183c29](https://github.com/totsiaw/proxma-patches/commit/2183c29575f24f67bfeed8906740c932ae23ece8)), closes [#29](https://github.com/totsiaw/proxma-patches/issues/29)
+
+### New Features
+
+* **indrive:** add remove-ads patch for sinet.startup.inDriver 5.188.0 / 5.189.0 ([3d4c6f8](https://github.com/totsiaw/proxma-patches/commit/3d4c6f885c478eae8e545a27dd0ad1b1f2a9ae41))
+* **olx:** remove the item-detail (PDP) banner ad slots ([c2833a3](https://github.com/totsiaw/proxma-patches/commit/c2833a37a9d6cebbd842f6a05300998d5c1e9e8c))
+
 ## [1.19.1](https://github.com/totsiaw/proxma-patches/compare/1.19.0...1.19.1) (2026-10-20)
 
 ### Bug Fixes
