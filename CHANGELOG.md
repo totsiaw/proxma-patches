@@ -1,3 +1,13 @@
+## [1.19.0](https://github.com/totsiaw/proxma-patches/compare/1.18.1...1.19.0) (2026-10-20)
+
+### Bug Fixes
+
+* **simosa:** claim the daily rung when the rewards screen is shown ([3c17535](https://github.com/totsiaw/proxma-patches/commit/3c1753563f83e500b53062d0abd940db1830cfde)), closes [#29](https://github.com/totsiaw/proxma-patches/issues/29)
+
+### New Features
+
+* **olx:** remove the item-detail (PDP) banner ad slots ([82e20dd](https://github.com/totsiaw/proxma-patches/commit/82e20dd0a2c9182fbcd0c08f3aeff575fb8e176f))
+
 ## [1.18.1](https://github.com/totsiaw/proxma-patches/compare/1.18.0...1.18.1) (2026-10-20)
 
 ### Bug Fixes
