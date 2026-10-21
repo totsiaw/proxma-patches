@@ -1,3 +1,9 @@
+## [1.22.2](https://github.com/totsiaw/proxma-patches/compare/1.22.1...1.22.2) (2026-10-21)
+
+### Bug Fixes
+
+* **simosa:** resolve StateFlow descriptor dynamically to fix 3.3.5 crash ([8d34d69](https://github.com/totsiaw/proxma-patches/commit/8d34d693b8936d398449a4ed8b52a38c8aab49f7))
+
 ## [1.22.1](https://github.com/totsiaw/proxma-patches/compare/1.22.0...1.22.1) (2026-10-21)
 
 ### Bug Fixes
