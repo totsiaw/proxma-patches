@@ -5,7 +5,6 @@ import app.morphe.patcher.string
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
 import app.morphe.patcher.extensions.InstructionExtensions.instructions
-import app.morphe.patcher.patch.BytecodePatchContext
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.util.proxy.mutableTypes.MutableClass
 import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod.Companion.toMutable
@@ -14,20 +13,12 @@ import com.android.tools.smali.dexlib2.AccessFlags
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.builder.MutableMethodImplementation
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
-import com.android.tools.smali.dexlib2.iface.instruction.WideLiteralInstruction
 import com.android.tools.smali.dexlib2.iface.reference.FieldReference
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 import com.android.tools.smali.dexlib2.iface.reference.StringReference
 import com.android.tools.smali.dexlib2.iface.reference.TypeReference
 import com.android.tools.smali.dexlib2.immutable.ImmutableMethod
 import com.android.tools.smali.dexlib2.immutable.ImmutableMethodParameter
-import com.android.tools.smali.smali.Smali
-import com.android.tools.smali.smali.SmaliOptions
-import java.io.ByteArrayInputStream
-import java.io.File
-import java.io.InputStream
-import java.nio.file.Files
-import java.util.function.Supplier
 
 /*
  * Simosa daily rewards: claim today's check-in and today's Daily Rewards rung without a tap.
@@ -122,10 +113,7 @@ private const val SIMOSA_REWARD_CLAIM_LISTENER =
 
 private const val AUTO_CLAIM = "Lapp/proxma/simosa/AutoClaim;"
 private const val CLAIM_TARGET = "Lapp/proxma/simosa/ClaimTarget;"
-private val AUTO_CLAIM_SOURCES = listOf("ClaimTarget", "DelayedClaim", "AutoClaim")
-
 private const val CONTEXT = "Landroid/content/Context;"
-private const val VIEW_MODEL_KT = "Landroidx/lifecycle/ViewModelKt;"
 
 internal val dailyCheckInPublishFingerprint = Fingerprint(
     returnType = "Ljava/lang/Object;",
@@ -190,32 +178,6 @@ private fun isCoroutineLaunch(reference: Any?) =
         reference.definingClass.endsWith("/i;") &&
         reference.returnType.endsWith("/z0;")
 
-private fun MethodReference.descriptor() =
-    "$definingClass->$name(${parameterTypes.joinToString("")})$returnType"
-
-/**
- * Assembles the runtime smali shipped as resources into one dex. Done at patch time, so the CLI
- * build and the Gradle build ship byte-identical runtime code without a separate extension project.
- */
-private fun assembleAutoClaimExtension(): InputStream {
-    val dir = Files.createTempDirectory("proxma-simosa-autoclaim").toFile()
-    try {
-        val sources = AUTO_CLAIM_SOURCES.map { name ->
-            val stream = object {}.javaClass.getResourceAsStream("/simosa/autoclaim/$name.smali")
-                ?: error("missing extension source $name.smali")
-            File(dir, "$name.smali").apply { writeBytes(stream.use { it.readBytes() }) }.path
-        }
-        val dex = File(dir, "autoclaim.dex")
-        val options = SmaliOptions().apply {
-            apiLevel = 23
-            outputDexFile = dex.path
-        }
-        check(Smali.assemble(options, sources)) { "failed to assemble the auto-claim extension" }
-        return ByteArrayInputStream(dex.readBytes())
-    } finally {
-        dir.deleteRecursively()
-    }
-}
 
 /** Adds a public final method with an empty body and fills it from [smali]. */
 private fun MutableClass.addProxmaMethod(
@@ -240,14 +202,11 @@ private fun MutableClass.addProxmaMethod(
 }
 
 /**
- * Makes [viewModel] a `ClaimTarget`: context accessor, viewModelScope launch, delay, the [fire]
- * body, and `proxmaOnApplied()` (the hook entry point that schedules [kind]).
+ * Makes [viewModel] a `ClaimTarget`: context accessor, the [fire] body, and `proxmaOnApplied()`
+ * (the hook entry point that schedules [kind]).
  */
 private fun MutableClass.addClaimTarget(
     kind: String,
-    scopeType: String,
-    launch: MethodReference,
-    delay: MethodReference,
     fireRegisters: Int,
     fire: String,
 ) {
@@ -258,28 +217,6 @@ private fun MutableClass.addClaimTarget(
         "proxmaContext", emptyList(), CONTEXT, 2,
         """
             iget-object v0, p0, $type->${contextField.name}:$CONTEXT
-            return-object v0
-        """,
-    )
-    addProxmaMethod(
-        "proxmaLaunch", listOf("Lkotlin/jvm/functions/Function2;"), "V", 8,
-        """
-            invoke-static {p0}, $VIEW_MODEL_KT->getViewModelScope(Landroidx/lifecycle/ViewModel;)$scopeType
-            move-result-object v0
-            const/4 v1, 0x0
-            const/4 v2, 0x0
-            move-object v3, p1
-            const/4 v4, 0x3
-            const/4 v5, 0x0
-            invoke-static/range {v0 .. v5}, ${launch.descriptor()}
-            return-void
-        """,
-    )
-    addProxmaMethod(
-        "proxmaDelay", listOf("J", "Lkotlin/coroutines/Continuation;"), "Ljava/lang/Object;", 5,
-        """
-            invoke-static {p1, p2, p3}, ${delay.descriptor()}
-            move-result-object v0
             return-object v0
         """,
     )
@@ -294,28 +231,6 @@ private fun MutableClass.addClaimTarget(
     )
 }
 
-/** kotlinx `delay(Long, Continuation)`, found by shape in the same (repackaged) package as `launch`. */
-private fun BytecodePatchContext.findCoroutineDelay(coroutinePackage: String): MethodReference {
-    val found = mutableListOf<MethodReference>()
-    classDefForEach { classDef ->
-        if (!classDef.type.startsWith(coroutinePackage)) return@classDefForEach
-        classDef.methods.filterTo(found) { m ->
-            AccessFlags.STATIC.isSet(m.accessFlags) && m.returnType == "Ljava/lang/Object;" &&
-                m.parameterTypes == listOf("J", "Lkotlin/coroutines/Continuation;") &&
-                m.implementation?.instructions?.let { body ->
-                    body.any { (it as? WideLiteralInstruction)?.wideLiteral == Long.MAX_VALUE } &&
-                        body.any { insn ->
-                            val reference = (insn as? ReferenceInstruction)?.reference as? MethodReference
-                            reference?.definingClass == "Lkotlin/coroutines/intrinsics/IntrinsicsKt;" &&
-                                reference.name == "intercepted"
-                        }
-                } == true
-        }
-    }
-    check(found.size == 1) { "expected one kotlinx delay() in $coroutinePackage, found ${found.size}" }
-    return found.single()
-}
-
 @Suppress("unused")
 val autoCheckInPatch = bytecodePatch(
     name = "Auto check-in & claim daily reward",
@@ -324,18 +239,13 @@ val autoCheckInPatch = bytecodePatch(
         "restore and the day-10/20/30 milestone claim are untouched.",
 ) {
     compatibleWith(COMPATIBILITY_SIMOSA)
-    extendWith(Supplier { assembleAutoClaimExtension() })
+    extendWith("extensions/extension.mpe")
 
     execute {
-        // ---- The app's own coroutine plumbing, taken from t2() ----
+        // ---- The completion callback of the response job, taken from t2() ----
         val applied = dailyRewardResponseAppliedFingerprint.method
         val appliedInstructions = applied.instructions.toList()
         val appliedReferences = appliedInstructions.map { (it as? ReferenceInstruction)?.reference }
-        val launch = appliedReferences.first { isCoroutineLaunch(it) } as MethodReference
-        val scope = appliedReferences.filterIsInstance<MethodReference>().first {
-            it.definingClass == VIEW_MODEL_KT && it.name == "getViewModelScope"
-        }
-        val delay = findCoroutineDelay(launch.definingClass.substringBeforeLast('/') + "/")
 
         // The job's completion callback: `new-instance vX, <callback>` ... `invoke-interface {job, vX}, z0->n(Function1)`.
         val callbackRegistration = appliedReferences.indexOfFirst { reference ->
@@ -420,9 +330,6 @@ val autoCheckInPatch = bytecodePatch(
         mutableClassDefBy(SIMOSA_CHECK_IN_VIEW_MODEL).apply {
             addClaimTarget(
                 kind = "checkin",
-                scopeType = scope.returnType,
-                launch = launch,
-                delay = delay,
                 fireRegisters = 6,
                 fire = """
                     const-string v4, "checkin"
@@ -532,9 +439,6 @@ val autoCheckInPatch = bytecodePatch(
 
         ladder.addClaimTarget(
             kind = "ladder",
-            scopeType = scope.returnType,
-            launch = launch,
-            delay = delay,
             fireRegisters = 8,
             fire = """
                 const-string v6, "ladder"
