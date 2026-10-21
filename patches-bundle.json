@@ -1,7 +1,7 @@
 {
-  "created_at": "2026-10-20T16:41:54",
-  "description": "## [1.22.0](https://github.com/totsiaw/proxma-patches/compare/1.21.0...1.22.0) (2026-10-20)\n\n### New Features\n\n* **simosa:** add pure black (AMOLED) background patch ([4788869](https://github.com/totsiaw/proxma-patches/commit/47888698a54a5de0f824da52ff753b7cb393ac13)), closes [#000000](https://github.com/totsiaw/proxma-patches/issues/000000)",
-  "download_url": "https://github.com/totsiaw/proxma-patches/releases/download/1.22.0/patches-1.22.0.mpp",
+  "created_at": "2026-10-21T01:50:40",
+  "description": "## [1.22.1](https://github.com/totsiaw/proxma-patches/compare/1.22.0...1.22.1) (2026-10-21)\n\n### Bug Fixes\n\n* **simosa:** switch the app's Compose theme to dark instead of editing XML ([1eb7f8c](https://github.com/totsiaw/proxma-patches/commit/1eb7f8cf2a1d1630f66380f96110805fa52c36eb))",
+  "download_url": "https://github.com/totsiaw/proxma-patches/releases/download/1.22.1/patches-1.22.1.mpp",
   "signature_download_url": "",
-  "version": "1.22.0"
+  "version": "1.22.1"
 }
