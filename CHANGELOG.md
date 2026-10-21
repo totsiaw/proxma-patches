@@ -1,3 +1,9 @@
+## [1.23.0](https://github.com/totsiaw/proxma-patches/compare/1.22.2...1.23.0) (2026-10-21)
+
+### New Features
+
+* **olx:** suppress home banner and Google banner container loads ([a4f3d5f](https://github.com/totsiaw/proxma-patches/commit/a4f3d5fcada5b9d453ae30afd2d5c7de5fe34472))
+
 ## [1.22.2](https://github.com/totsiaw/proxma-patches/compare/1.22.1...1.22.2) (2026-10-21)
 
 ### Bug Fixes
