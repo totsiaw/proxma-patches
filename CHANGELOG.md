@@ -1,3 +1,9 @@
+## [1.22.1](https://github.com/totsiaw/proxma-patches/compare/1.22.0...1.22.1) (2026-10-21)
+
+### Bug Fixes
+
+* **simosa:** switch the app's Compose theme to dark instead of editing XML ([1eb7f8c](https://github.com/totsiaw/proxma-patches/commit/1eb7f8cf2a1d1630f66380f96110805fa52c36eb))
+
 ## [1.22.0](https://github.com/totsiaw/proxma-patches/compare/1.21.0...1.22.0) (2026-10-20)
 
 ### New Features
