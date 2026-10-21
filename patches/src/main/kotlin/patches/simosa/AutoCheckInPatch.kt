@@ -118,9 +118,15 @@ internal val dailyRewardStateRenderFingerprint = Fingerprint(
  * launches the coroutine that applies the response to the state flows. Hooking its tail therefore
  * runs once per ladder response, on every route, with the fresh response already in `b0`.
  *
- * Pinned on the structure rather than only the name: the body launches a coroutine through
- * `Lnb/i;->d(...)` (6 arguments), which is what distinguishes it from the ViewModel's other
+ * Pinned on the structure rather than only the name: the body launches a coroutine through the
+ * app's `kotlinx.coroutines` facade — `<pkg>/i;->d(...)` with 6 arguments, the 4th of which is a
+ * `Function2` and the last an `Object`. That is what distinguishes it from the ViewModel's other
  * zero-argument helpers.
+ *
+ * The package of that facade is *not* stable across releases: it is `Lnb/i;` on 3.3.4.2 and
+ * `Lub/i;` on 3.3.5, because the whole coroutines shim gets repackaged by the app's shrinker. So
+ * the check matches the shape (name, arity, parameter kinds, `/i;` facade, `/z0;` return) and not
+ * a literal class name — otherwise the patch silently stops matching on the next rebuild.
  */
 internal val dailyRewardResponseAppliedFingerprint = Fingerprint(
     returnType = "V",
@@ -130,8 +136,13 @@ internal val dailyRewardResponseAppliedFingerprint = Fingerprint(
         c.type == SIMOSA_REWARD_LADDER_VIEW_MODEL && m.name == "t2" &&
             m.implementation?.instructions?.any { insn ->
                 val reference = (insn as? ReferenceInstruction)?.reference
-                reference is MethodReference && reference.definingClass == "Lnb/i;" &&
-                    reference.name == "d" && reference.parameterTypes.size == 6
+                reference is MethodReference && reference.name == "d" &&
+                    reference.parameterTypes.size == 6 &&
+                    reference.parameterTypes[3] == "Lkotlin/jvm/functions/Function2;" &&
+                    reference.parameterTypes[4] == "I" &&
+                    reference.parameterTypes[5] == "Ljava/lang/Object;" &&
+                    reference.definingClass.endsWith("/i;") &&
+                    reference.returnType.endsWith("/z0;")
             } == true
     },
 )
