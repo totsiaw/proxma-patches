@@ -94,14 +94,14 @@ public final class HideTabs {
         }
         Class<?> type = tab.getClass();
         // Getter first: the model is a Kotlin data class, so `getIdentifier()` exists and is
-        // public. Accessibility is forced on failure because the accessor is a public method on a
-        // class an obfuscator may not have marked public — reflection throws
-        // IllegalAccessException there, which would otherwise read as "hide nothing".
+        // public. Accessibility is forced unconditionally rather than via canAccess(): this module
+        // is compiled at Java 8 source level for Android, where the Java 9 canAccess() does not
+        // exist. The accessor is a public method on a class an obfuscator may not have marked
+        // public, and reflection throws IllegalAccessException there — which would otherwise read
+        // as "hide nothing".
         try {
             Method getter = type.getMethod(IDENTIFIER_GETTER);
-            if (!getter.canAccess(tab)) {
-                getter.setAccessible(true);
-            }
+            getter.setAccessible(true);
             Object value = getter.invoke(tab);
             return value instanceof String ? (String) value : null;
         } catch (Throwable ignored) {
