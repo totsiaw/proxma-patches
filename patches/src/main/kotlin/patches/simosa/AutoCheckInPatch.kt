@@ -218,11 +218,19 @@ val autoCheckInPatch = bytecodePatch(
         // the three registers injected code uses (v0-v2) are its dead locals.
         check(renderRegisters >= 4) { "unexpected register layout in the daily-reward renderer" }
 
+        // Detect the obfuscated package name for kotlinx.coroutines.flow.StateFlow (`Lqb/B;` on 3.3.4.2, `Lxb/B;` on 3.3.5)
+        // dynamically from the method's own `reference.type` so the descriptor is always identical to the host class.
+        val stateFlowRef = (renderInstructions.first { insn ->
+            val ref = (insn as? ReferenceInstruction)?.reference as? FieldReference
+            ref != null && ref.definingClass == SIMOSA_REWARD_VIEW_MODEL && ref.name == SIMOSA_REWARD_STATE_FLOW
+        } as ReferenceInstruction).reference as FieldReference
+        val stateFlowType = stateFlowRef.type
+
         render.addInstructionsWithLabels(
             0,
             """
-                iget-object v0, p0, $SIMOSA_REWARD_VIEW_MODEL->${SIMOSA_REWARD_STATE_FLOW}:Lqb/B;
-                invoke-interface {v0}, Lqb/B;->getValue()Ljava/lang/Object;
+                iget-object v0, p0, $SIMOSA_REWARD_VIEW_MODEL->${SIMOSA_REWARD_STATE_FLOW}:$stateFlowType
+                invoke-interface {v0}, ${stateFlowType}->getValue()Ljava/lang/Object;
                 move-result-object v0
                 if-eqz v0, :proxma_auto_claim_done
                 check-cast v0, $SIMOSA_REWARD_STATE
@@ -279,15 +287,23 @@ val autoCheckInPatch = bytecodePatch(
             "unexpected register layout in the daily-rewards listener"
         }
 
+        // Detect the return type of `Le4/N;->F1()` directly from the listener class's own instructions
+        // (`Lqb/B;` on 3.3.4.2, `Lxb/B;` on 3.3.5) so it matches whichever package the app was built with.
+        val f1Call = listenerInstructions.first { insn ->
+            val ref = (insn as? ReferenceInstruction)?.reference as? MethodReference
+            ref != null && ref.definingClass == SIMOSA_REWARD_LADDER_VIEW_MODEL && ref.name == "F1"
+        }
+        val ladderStateFlowType = ((f1Call as ReferenceInstruction).reference as MethodReference).returnType
+
         listener.addInstructionsWithLabels(
             listenerInstructions.size - 1,
             """
                 move-object/from16 v2, p0
                 move-object/from16 v4, p1
                 iget-object v2, v2, $SIMOSA_REWARD_LIST_LISTENER->a:$SIMOSA_REWARD_LADDER_VIEW_MODEL
-                invoke-static {v2}, ${SIMOSA_REWARD_LADDER_VIEW_MODEL}->F1(${SIMOSA_REWARD_LADDER_VIEW_MODEL})Lqb/B;
+                invoke-static {v2}, ${SIMOSA_REWARD_LADDER_VIEW_MODEL}->F1(${SIMOSA_REWARD_LADDER_VIEW_MODEL})$ladderStateFlowType
                 move-result-object v3
-                invoke-interface {v3}, Lqb/B;->getValue()Ljava/lang/Object;
+                invoke-interface {v3}, ${ladderStateFlowType}->getValue()Ljava/lang/Object;
                 move-result-object v3
                 if-eqz v3, :proxma_auto_claim_ladder
                 check-cast v3, $SIMOSA_REWARD_LADDER_STATE
