@@ -2,57 +2,77 @@ package patches.simosa
 
 import app.morphe.patcher.Fingerprint
 import app.morphe.patcher.string
+import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
 import app.morphe.patcher.extensions.InstructionExtensions.instructions
+import app.morphe.patcher.patch.BytecodePatchContext
 import app.morphe.patcher.patch.bytecodePatch
+import app.morphe.patcher.util.proxy.mutableTypes.MutableClass
+import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod.Companion.toMutable
 import app.morphe.patcher.util.smali.ExternalLabel
 import com.android.tools.smali.dexlib2.AccessFlags
 import com.android.tools.smali.dexlib2.Opcode
+import com.android.tools.smali.dexlib2.builder.MutableMethodImplementation
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
+import com.android.tools.smali.dexlib2.iface.instruction.WideLiteralInstruction
 import com.android.tools.smali.dexlib2.iface.reference.FieldReference
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
+import com.android.tools.smali.dexlib2.iface.reference.StringReference
+import com.android.tools.smali.dexlib2.iface.reference.TypeReference
+import com.android.tools.smali.dexlib2.immutable.ImmutableMethod
+import com.android.tools.smali.dexlib2.immutable.ImmutableMethodParameter
+import com.android.tools.smali.smali.Smali
+import com.android.tools.smali.smali.SmaliOptions
+import java.io.ByteArrayInputStream
+import java.io.File
+import java.io.InputStream
+import java.nio.file.Files
+import java.util.function.Supplier
 
 /*
- * Simosa daily rewards: claim the day's rung without a tap.
+ * Simosa daily rewards: claim today's check-in and today's Daily Rewards rung without a tap.
  *
  * The "Daily Rewards" screen carries two independent reward systems:
  *
- *  1. "Daily Check-In" — `Li4/v`, the check-in ViewModel. Opening the screen starts `v.G2()`, which
+ *  1. "Daily Check-In" — `Li4/v`, the check-in ViewModel. Tapping "Check in" (`onCheckInClicked`) starts `v.G2()`, which
  *     runs one suspend lambda (obfuscated `Li4/v$n`, the only `invokeSuspend` in the app that logs
  *     " _pendingCheckInAdShow "). That lambda reads the check-in state out of three flags and
  *     publishes a "pending check-in ad" event into the screen state flow. The UI shows the check-in
  *     ad, and only after it is dismissed calls the ViewModel's check-in (`X1()`, which logs
- *     "access_token missing, skip check-in"). Parts 1-2 below call `X1()` at the publish site and at
- *     the state renderer, so the check-in goes through with no ad and no tap. That half works and is
- *     unchanged.
+ *     "access_token missing, skip check-in"). Part 1 calls `X1()` at the publish site (no ad), and
+ *     part 2 schedules the same call from the state renderer (no tap).
  *
  *  2. "Daily Rewards" — `Le4/N`, the MB ladder (25/50/100/120/150/175/200 MB). Its "Claim it Now!"
  *     button drives exactly one call:
- *         Le4/N;->L1(DaysListItem day, String currentStatus)
- *     which POSTs `gamification/claim`. Part 3 below makes that call for the user.
+ *         Le4/N;->L1(U.i(), data.currentStatus ?: "")      (U.i() is the selected rung)
+ *     and `L1` itself only launches the claim while `a0` is false. `a0` is the app's "today is already
+ *     claimed" flag: `l2` sets it to true for `claimed == "true"` and to false for `claimed == "false"`.
+ *     Part 3 makes the button's call for the user.
  *
- * Why part 3 is anchored on `t2()` and not on the screen:
+ * Why part 3 hooks the completion callback of `t2()` and not `t2()` itself:
  *
- *  - Every ladder response the app receives is stored with `o2(response)` and then handed to `J1()`,
- *    which is `t2()`. All three response handlers (full list, claim result, cached) do exactly this,
- *    so `t2()` is the one place that runs for *every* route that fills the ladder — which route a
- *    given account takes no longer matters.
- *  - `t2()` runs with the fresh response already in `b0`, and it runs *before* its own coroutine has
- *    applied that response to the state flows. The rung is therefore read from the response's own
- *    `daysList` (the entry whose `day` equals `data.currentDay`), which is correct on the very first
- *    response. Reading the ladder out of the screen state at that moment would see the previous
- *    value — the earlier hooks did exactly that, and on a cold screen open they saw nothing.
- *  - `data.currentStatus` is passed through untouched. The app's own claim passes the real status
- *    string; passing anything else (an empty string) makes the server reject the claim silently.
+ *  - Every ladder response is stored with `o2(response)` and handed to `J1()` = `t2()`, on every route.
+ *  - But `t2()` only *launches* `Le4/N$j`, which applies the response (`l2` recomputes `a0`, the ladder
+ *    state flow is rebuilt). Code at the tail of `t2()` therefore sees the previous response's `a0`
+ *    and ladder. `t2()` registers a completion callback on that job (`Le4/M`, via `z0.n(Function1)`);
+ *    it runs after the response has been applied, so that is the anchor.
+ *  - `Le4/M` is a different class from `Le4/N`, and `a0`/`b0` are private (reading them from `Le4/M`
+ *    is the IllegalAccessError of issue #38). So `Le4/M` only calls a public method this patch adds to
+ *    `Le4/N`, and every private read happens inside `Le4/N`.
  *
- * Guards, so the automatic claim can never claim twice:
- *  - `data.claimed == "true"` — the app's own "today is claimed" marker.
- *  - `Le4/N;->a0` — the ViewModel's "current reward day already claimed" flag, which the app
- *    recomputes from every response.
- *  - after firing the claim, `a0` is latched to `true` via the public setter `n2(Z)`.
+ * One attempt per account per day, for each of the two systems:
+ *  - The hook schedules a 2-6 s jittered coroutine on the ViewModel's own `viewModelScope` (through
+ *    the app's own launch and delay); a ViewModel cleared during the delay cancels it.
+ *  - When it fires, every guard is re-checked against the ViewModel's current state: day latch,
+ *    response/data present, `claimed != "true"`, `a0 == false`, a selected rung (ladder), or
+ *    `can_checkin_today && !must_restore` (check-in).
+ *  - The latch (`proxma_claim_<msisdn-hash>_<yyyyMMdd>` in SharedPreferences "proxma_simosa") is
+ *    committed *before* the app's own claim call. `a0` is never forced (`n2(false)` is not called).
+ *  - Each outcome is one `PROXMA_CLAIM` logcat line; nothing is shown to the user.
  *
- * Anchored on unobfuscated app types (the DTOs and `Lnb/i;->d`) plus the release-pinned ViewModel,
- * all of which COMPATIBILITY_SIMOSA (3.3.4.2) fixes.
+ * The runtime half (latch, schedule, coroutine body, logging) is the smali in
+ * `resources/simosa/autoclaim/`, assembled into the patch's extension dex at patch time. It names no
+ * obfuscated class: it reaches the ViewModels through the `ClaimTarget` interface this patch adds.
  */
 
 /** The check-in ViewModel. */
@@ -68,12 +88,19 @@ private const val SIMOSA_CHECK_IN_STATE =
 /** `Li4/c` — the check-in event type enum; its `a` constant is the "daily check-in" event. */
 private const val CHECK_IN_EVENT_ENUM = "Li4/c;"
 
+/** The (unobfuscated) result wrapper the check-in collector receives (Loading / Success / Failure). */
+private const val SIMOSA_API_RESOURCES =
+    "Lcom/jazz/jazzworld/data/network/genericapis/helper/ApiResources;"
+
 // ---------------------------------------------------------------------------------------------
 // Daily Rewards tab (the MB ladder, not the check-in).
 // ---------------------------------------------------------------------------------------------
 
 /** `Le4/N` — the Daily Rewards tab's ViewModel (`DailyRewardViewModel` in its metadata). */
 private const val SIMOSA_REWARD_LADDER_VIEW_MODEL = "Le4/N;"
+
+/** `Le4/U` — the ladder state; `i()` is the selected rung the "Claim it Now!" button claims. */
+private const val SIMOSA_REWARD_LADDER_STATE = "Le4/U;"
 
 /** The (unobfuscated) DTO for one rung of the ladder. */
 private const val SIMOSA_REWARD_DAY_ITEM =
@@ -84,6 +111,21 @@ private const val SIMOSA_REWARD_RESPONSE =
     "Lcom/jazz/jazzworld/data/appmodels/dailyreward/response/DailyRewardResponse;"
 private const val SIMOSA_REWARD_DATA =
     "Lcom/jazz/jazzworld/data/appmodels/dailyreward/response/Data;"
+
+/** The (unobfuscated) callback interface the ladder claim (`L1`) reports its result through. */
+private const val SIMOSA_REWARD_CLAIM_LISTENER =
+    "Lcom/jazz/jazzworld/data/network/genericapis/dailyreward/OnDailyRewardSubscriptionListeners;"
+
+// ---------------------------------------------------------------------------------------------
+// The patch's own runtime classes (resources/simosa/autoclaim/*.smali).
+// ---------------------------------------------------------------------------------------------
+
+private const val AUTO_CLAIM = "Lapp/proxma/simosa/AutoClaim;"
+private const val CLAIM_TARGET = "Lapp/proxma/simosa/ClaimTarget;"
+private val AUTO_CLAIM_SOURCES = listOf("ClaimTarget", "DelayedClaim", "AutoClaim")
+
+private const val CONTEXT = "Landroid/content/Context;"
+private const val VIEW_MODEL_KT = "Landroidx/lifecycle/ViewModelKt;"
 
 internal val dailyCheckInPublishFingerprint = Fingerprint(
     returnType = "Ljava/lang/Object;",
@@ -115,8 +157,8 @@ internal val dailyRewardStateRenderFingerprint = Fingerprint(
 /**
  * `Le4/N;->t2()` — the ladder ViewModel's "a response arrived" entry point. Every response handler
  * stores the response with `o2(...)` and then calls the synthetic `J1()`, which is this method; it
- * launches the coroutine that applies the response to the state flows. Hooking its tail therefore
- * runs once per ladder response, on every route, with the fresh response already in `b0`.
+ * launches the coroutine that applies the response to the state flows and registers a completion
+ * callback on it. The patch hooks that callback, not this method (see the header).
  *
  * Pinned on the structure rather than only the name: the body launches a coroutine through the
  * app's `kotlinx.coroutines` facade — `<pkg>/i;->d(...)` with 6 arguments, the 4th of which is a
@@ -134,30 +176,178 @@ internal val dailyRewardResponseAppliedFingerprint = Fingerprint(
     parameters = emptyList(),
     custom = { m, c ->
         c.type == SIMOSA_REWARD_LADDER_VIEW_MODEL && m.name == "t2" &&
-            m.implementation?.instructions?.any { insn ->
-                val reference = (insn as? ReferenceInstruction)?.reference
-                reference is MethodReference && reference.name == "d" &&
-                    reference.parameterTypes.size == 6 &&
-                    reference.parameterTypes[3] == "Lkotlin/jvm/functions/Function2;" &&
-                    reference.parameterTypes[4] == "I" &&
-                    reference.parameterTypes[5] == "Ljava/lang/Object;" &&
-                    reference.definingClass.endsWith("/i;") &&
-                    reference.returnType.endsWith("/z0;")
-            } == true
+            m.implementation?.instructions?.any { insn -> isCoroutineLaunch((insn as? ReferenceInstruction)?.reference) } == true
     },
 )
+
+/** `<pkg>/i;->d(scope, context, start, Function2, int, Object)<pkg>/z0;` — kotlinx `launch$default`. */
+private fun isCoroutineLaunch(reference: Any?) =
+    reference is MethodReference && reference.name == "d" &&
+        reference.parameterTypes.size == 6 &&
+        reference.parameterTypes[3] == "Lkotlin/jvm/functions/Function2;" &&
+        reference.parameterTypes[4] == "I" &&
+        reference.parameterTypes[5] == "Ljava/lang/Object;" &&
+        reference.definingClass.endsWith("/i;") &&
+        reference.returnType.endsWith("/z0;")
+
+private fun MethodReference.descriptor() =
+    "$definingClass->$name(${parameterTypes.joinToString("")})$returnType"
+
+/**
+ * Assembles the runtime smali shipped as resources into one dex. Done at patch time, so the CLI
+ * build and the Gradle build ship byte-identical runtime code without a separate extension project.
+ */
+private fun assembleAutoClaimExtension(): InputStream {
+    val dir = Files.createTempDirectory("proxma-simosa-autoclaim").toFile()
+    try {
+        val sources = AUTO_CLAIM_SOURCES.map { name ->
+            val stream = object {}.javaClass.getResourceAsStream("/simosa/autoclaim/$name.smali")
+                ?: error("missing extension source $name.smali")
+            File(dir, "$name.smali").apply { writeBytes(stream.use { it.readBytes() }) }.path
+        }
+        val dex = File(dir, "autoclaim.dex")
+        val options = SmaliOptions().apply {
+            apiLevel = 23
+            outputDexFile = dex.path
+        }
+        check(Smali.assemble(options, sources)) { "failed to assemble the auto-claim extension" }
+        return ByteArrayInputStream(dex.readBytes())
+    } finally {
+        dir.deleteRecursively()
+    }
+}
+
+/** Adds a public final method with an empty body and fills it from [smali]. */
+private fun MutableClass.addProxmaMethod(
+    name: String,
+    parameters: List<String>,
+    returnType: String,
+    registers: Int,
+    smali: String,
+) {
+    val method = ImmutableMethod(
+        type,
+        name,
+        parameters.map { ImmutableMethodParameter(it, null, null) },
+        returnType,
+        AccessFlags.PUBLIC.value or AccessFlags.FINAL.value,
+        null,
+        null,
+        MutableMethodImplementation(registers),
+    ).toMutable()
+    method.addInstructionsWithLabels(0, smali.trimIndent())
+    methods.add(method)
+}
+
+/**
+ * Makes [viewModel] a `ClaimTarget`: context accessor, viewModelScope launch, delay, the [fire]
+ * body, and `proxmaOnApplied()` (the hook entry point that schedules [kind]).
+ */
+private fun MutableClass.addClaimTarget(
+    kind: String,
+    scopeType: String,
+    launch: MethodReference,
+    delay: MethodReference,
+    fireRegisters: Int,
+    fire: String,
+) {
+    interfaces.add(CLAIM_TARGET)
+
+    val contextField = fields.single { it.type == CONTEXT && !AccessFlags.STATIC.isSet(it.accessFlags) }
+    addProxmaMethod(
+        "proxmaContext", emptyList(), CONTEXT, 2,
+        """
+            iget-object v0, p0, $type->${contextField.name}:$CONTEXT
+            return-object v0
+        """,
+    )
+    addProxmaMethod(
+        "proxmaLaunch", listOf("Lkotlin/jvm/functions/Function2;"), "V", 8,
+        """
+            invoke-static {p0}, $VIEW_MODEL_KT->getViewModelScope(Landroidx/lifecycle/ViewModel;)$scopeType
+            move-result-object v0
+            const/4 v1, 0x0
+            const/4 v2, 0x0
+            move-object v3, p1
+            const/4 v4, 0x3
+            const/4 v5, 0x0
+            invoke-static/range {v0 .. v5}, ${launch.descriptor()}
+            return-void
+        """,
+    )
+    addProxmaMethod(
+        "proxmaDelay", listOf("J", "Lkotlin/coroutines/Continuation;"), "Ljava/lang/Object;", 5,
+        """
+            invoke-static {p1, p2, p3}, ${delay.descriptor()}
+            move-result-object v0
+            return-object v0
+        """,
+    )
+    addProxmaMethod("proxmaFire", emptyList(), "V", fireRegisters, fire)
+    addProxmaMethod(
+        "proxmaOnApplied", emptyList(), "V", 2,
+        """
+            const-string v0, "$kind"
+            invoke-static {p0, v0}, $AUTO_CLAIM->schedule($CLAIM_TARGET Ljava/lang/String;)V
+            return-void
+        """,
+    )
+}
+
+/** kotlinx `delay(Long, Continuation)`, found by shape in the same (repackaged) package as `launch`. */
+private fun BytecodePatchContext.findCoroutineDelay(coroutinePackage: String): MethodReference {
+    val found = mutableListOf<MethodReference>()
+    classDefForEach { classDef ->
+        if (!classDef.type.startsWith(coroutinePackage)) return@classDefForEach
+        classDef.methods.filterTo(found) { m ->
+            AccessFlags.STATIC.isSet(m.accessFlags) && m.returnType == "Ljava/lang/Object;" &&
+                m.parameterTypes == listOf("J", "Lkotlin/coroutines/Continuation;") &&
+                m.implementation?.instructions?.let { body ->
+                    body.any { (it as? WideLiteralInstruction)?.wideLiteral == Long.MAX_VALUE } &&
+                        body.any { insn ->
+                            val reference = (insn as? ReferenceInstruction)?.reference as? MethodReference
+                            reference?.definingClass == "Lkotlin/coroutines/intrinsics/IntrinsicsKt;" &&
+                                reference.name == "intercepted"
+                        }
+                } == true
+        }
+    }
+    check(found.size == 1) { "expected one kotlinx delay() in $coroutinePackage, found ${found.size}" }
+    return found.single()
+}
 
 @Suppress("unused")
 val autoCheckInPatch = bytecodePatch(
     name = "Auto check-in & claim daily reward",
-    description = "Claims today's daily check-in and today's Daily Rewards rung on their own, with " +
-        "no ad and nothing to tap. The missed-days restore and the day-10/20/30 milestone claim " +
-        "are untouched.",
+    description = "Claims today's daily check-in and today's Daily Rewards rung on their own, once a " +
+        "day, a few seconds after the app has loaded them — no ad and nothing to tap. The missed-days " +
+        "restore and the day-10/20/30 milestone claim are untouched.",
 ) {
     compatibleWith(COMPATIBILITY_SIMOSA)
+    extendWith(Supplier { assembleAutoClaimExtension() })
 
     execute {
-        // ---- Part 1: check in without the ad gate ----
+        // ---- The app's own coroutine plumbing, taken from t2() ----
+        val applied = dailyRewardResponseAppliedFingerprint.method
+        val appliedInstructions = applied.instructions.toList()
+        val appliedReferences = appliedInstructions.map { (it as? ReferenceInstruction)?.reference }
+        val launch = appliedReferences.first { isCoroutineLaunch(it) } as MethodReference
+        val scope = appliedReferences.filterIsInstance<MethodReference>().first {
+            it.definingClass == VIEW_MODEL_KT && it.name == "getViewModelScope"
+        }
+        val delay = findCoroutineDelay(launch.definingClass.substringBeforeLast('/') + "/")
+
+        // The job's completion callback: `new-instance vX, <callback>` ... `invoke-interface {job, vX}, z0->n(Function1)`.
+        val callbackRegistration = appliedReferences.indexOfFirst { reference ->
+            reference is MethodReference && reference.name == "n" &&
+                reference.definingClass.endsWith("/z0;") &&
+                reference.parameterTypes == listOf("Lkotlin/jvm/functions/Function1;")
+        }
+        check(callbackRegistration > 0) { "t2() registers no completion callback" }
+        val callbackType = (appliedInstructions.subList(0, callbackRegistration)
+            .last { it.opcode == Opcode.NEW_INSTANCE } as ReferenceInstruction).reference as TypeReference
+
+        // ---- Part 1: check in without the ad gate (the user's own tap) ----
         val method = dailyCheckInPublishFingerprint.method
         val instructions = method.instructions.toList()
 
@@ -177,19 +367,21 @@ val autoCheckInPatch = bytecodePatch(
 
         // At this point p0 is the lambda, whose field `e` is the ViewModel; p1 already holds the
         // state flow (not the ViewModel) and v1 is a dead boolean, so load the ViewModel into v1.
+        // `proxmaManual()` latches today and logs the tap, so part 2 does not repeat it.
         method.addInstructionsWithLabels(
             publishIndex,
             """
                 iget-object v1, p0, Li4/v${'$'}n;->e:Li4/v;
+                invoke-virtual {v1}, $SIMOSA_CHECK_IN_VIEW_MODEL->proxmaManual()V
                 invoke-virtual {v1}, Li4/v;->X1()V
                 goto :proxma_auto_check_in
             """.trimIndent(),
             ExternalLabel("proxma_auto_check_in", skipTo),
         )
 
-        // ---- Part 2: check in as soon as the app knows today's check-in state ----
+        // ---- Part 2: check in by itself once the app knows today's check-in state ----
         // The publish site above only runs once the user taps "Check in", so the check-in is also
-        // started from the renderer every check-in state response goes through.
+        // scheduled from the renderer every check-in state response goes through.
         val render = dailyRewardStateRenderFingerprint.method
         val renderInstructions = render.instructions.toList()
         val stateReads = renderInstructions.mapNotNull { insn ->
@@ -210,6 +402,73 @@ val autoCheckInPatch = bytecodePatch(
         // the three registers injected code uses (v0-v2) are its dead locals.
         check(renderRegisters >= 4) { "unexpected register layout in the daily-reward renderer" }
 
+        val checkInGuards = """
+            invoke-virtual {v1}, ${SIMOSA_CHECK_IN_STATE}->getCan_checkin_today()Ljava/lang/Boolean;
+            move-result-object v2
+            sget-object v3, Ljava/lang/Boolean;->TRUE:Ljava/lang/Boolean;
+            invoke-static {v2, v3}, Lkotlin/jvm/internal/Intrinsics;->areEqual(Ljava/lang/Object;Ljava/lang/Object;)Z
+            move-result v2
+            if-eqz v2, :proxma_claimed
+            invoke-virtual {v1}, ${SIMOSA_CHECK_IN_STATE}->getMust_restore()Ljava/lang/Boolean;
+            move-result-object v2
+            sget-object v3, Ljava/lang/Boolean;->TRUE:Ljava/lang/Boolean;
+            invoke-static {v2, v3}, Lkotlin/jvm/internal/Intrinsics;->areEqual(Ljava/lang/Object;Ljava/lang/Object;)Z
+            move-result v2
+            if-nez v2, :proxma_restore
+        """
+
+        mutableClassDefBy(SIMOSA_CHECK_IN_VIEW_MODEL).apply {
+            addClaimTarget(
+                kind = "checkin",
+                scopeType = scope.returnType,
+                launch = launch,
+                delay = delay,
+                fireRegisters = 6,
+                fire = """
+                    const-string v4, "checkin"
+                    invoke-virtual {p0}, $SIMOSA_CHECK_IN_VIEW_MODEL->proxmaContext()$CONTEXT
+                    move-result-object v0
+                    invoke-static {v0, v4}, $AUTO_CLAIM->check($CONTEXT Ljava/lang/String;)Ljava/lang/String;
+                    move-result-object v1
+                    if-nez v1, :proxma_skip
+                    iget-object v1, p0, $SIMOSA_CHECK_IN_VIEW_MODEL->${SIMOSA_CHECK_IN_STATE_FLOW}:$flowType
+                    invoke-interface {v1}, $flowType->getValue()Ljava/lang/Object;
+                    move-result-object v1
+                    if-eqz v1, :proxma_no_state
+                    check-cast v1, $SIMOSA_CHECK_IN_STATE
+                    $checkInGuards
+                    invoke-static {v0, v4}, $AUTO_CLAIM->latch($CONTEXT Ljava/lang/String;)V
+                    const-string v1, "today"
+                    const-string v2, "-"
+                    invoke-static {v4, v1, v2}, $AUTO_CLAIM->fired(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+                    invoke-virtual {p0}, $SIMOSA_CHECK_IN_VIEW_MODEL->X1()V
+                    return-void
+                    :proxma_no_state
+                    const-string v1, "skip no-state"
+                    goto :proxma_skip
+                    :proxma_claimed
+                    const-string v1, "skip claimed"
+                    goto :proxma_skip
+                    :proxma_restore
+                    const-string v1, "skip must-restore"
+                    :proxma_skip
+                    invoke-static {v4, v1}, $AUTO_CLAIM->log(Ljava/lang/String;Ljava/lang/String;)V
+                    return-void
+                """,
+            )
+            addProxmaMethod(
+                "proxmaManual", emptyList(), "V", 3,
+                """
+                    invoke-virtual {p0}, $SIMOSA_CHECK_IN_VIEW_MODEL->proxmaContext()$CONTEXT
+                    move-result-object v0
+                    const-string v1, "checkin"
+                    invoke-static {v0, v1}, $AUTO_CLAIM->manual($CONTEXT Ljava/lang/String;)V
+                    return-void
+                """,
+            )
+        }
+
+        // Same guards as before, but the renderer only schedules; the claim itself re-checks them.
         render.addInstructionsWithLabels(
             0,
             """
@@ -230,76 +489,161 @@ val autoCheckInPatch = bytecodePatch(
                 invoke-static {v1, v2}, Lkotlin/jvm/internal/Intrinsics;->areEqual(Ljava/lang/Object;Ljava/lang/Object;)Z
                 move-result v1
                 if-nez v1, :proxma_auto_check_in_done
-                invoke-virtual {p0}, ${SIMOSA_CHECK_IN_VIEW_MODEL}->X1()V
+                invoke-virtual {p0}, $SIMOSA_CHECK_IN_VIEW_MODEL->proxmaOnApplied()V
             """.trimIndent(),
             ExternalLabel("proxma_auto_check_in_done", renderInstructions.first()),
         )
 
-        // ---- Part 3: claim today's Daily Rewards rung, on every route ----
-        // `L1` is what the "Claim it Now!" button calls. Its second argument is the response's own
-        // `currentStatus` — the server validates it, so it is passed through as-is.
-        //
-        // `t2()` runs before its own coroutine has applied the response to the state flows, so the
-        // rung is taken from the response itself: the `daysList` entry whose `day` equals
-        // `data.currentDay`. That is exactly the rung the screen highlights as ready.
-        val applied = dailyRewardResponseAppliedFingerprint.method
-        val appliedInstructions = applied.instructions.toList()
-        val appliedReturns = appliedInstructions.count { it.opcode == Opcode.RETURN_VOID }
-        check(appliedReturns == 1) { "unexpected daily-rewards response handler body" }
-        val appliedEnd = appliedInstructions.last()
-        check(appliedEnd.opcode == Opcode.RETURN_VOID) {
-            "daily-rewards response handler does not end with return-void"
-        }
-        // `t2()` is an instance method with no parameters (`.registers 7`): p0 is v6 and v0-v5 are
-        // its dead locals after the trailing callback registration.
-        check((applied.implementation?.registerCount ?: 0) >= 7) {
-            "unexpected register layout in the daily-rewards response handler"
-        }
+        // ---- Part 3: claim today's Daily Rewards rung, after the response has been applied ----
+        val ladder = mutableClassDefBy(SIMOSA_REWARD_LADDER_VIEW_MODEL)
 
-        applied.addInstructionsWithLabels(
-            appliedInstructions.size - 1,
-            """
-                iget-object v0, v6, $SIMOSA_REWARD_LADDER_VIEW_MODEL->b0:$SIMOSA_REWARD_RESPONSE
-                if-eqz v0, :proxma_ladder_claim_end
-                iget-boolean v1, v6, $SIMOSA_REWARD_LADDER_VIEW_MODEL->a0:Z
-                if-eqz v1, :proxma_ladder_claim_end
-                invoke-virtual {v0}, $SIMOSA_REWARD_RESPONSE->getData()$SIMOSA_REWARD_DATA
+        // `L1(day, status)` returns at once unless its "already claimed" flag is false: the boolean
+        // field it reads right before its first `if-nez` is `a0`.
+        val claim = ladder.methods.single {
+            it.name == "L1" && it.parameterTypes == listOf(SIMOSA_REWARD_DAY_ITEM, "Ljava/lang/String;")
+        }
+        val claimBody = claim.instructions.toList()
+        val claimGate = claimBody.indexOfFirst { it.opcode == Opcode.IF_NEZ }
+        check(claimGate > 0) { "L1() has no claimed-flag gate" }
+        val claimedFlag = ((claimBody.subList(0, claimGate).last { it.opcode == Opcode.IGET_BOOLEAN }
+            as ReferenceInstruction).reference as FieldReference)
+        check(claimedFlag.definingClass == SIMOSA_REWARD_LADDER_VIEW_MODEL) { "L1() gates on a foreign flag" }
+
+        val responseField = ladder.fields.single { it.type == SIMOSA_REWARD_RESPONSE }
+
+        // The ladder state flow: the field whose value is read and cast to `Le4/U` across the ViewModel.
+        val ladderStateReads = ladder.methods.flatMap { m ->
+            val body = m.implementation?.instructions?.toList() ?: return@flatMap emptyList()
+            body.withIndex().mapNotNull { (index, insn) ->
+                if (insn.opcode != Opcode.IGET_OBJECT) return@mapNotNull null
+                val field = (insn as ReferenceInstruction).reference as FieldReference
+                if (field.definingClass != SIMOSA_REWARD_LADDER_VIEW_MODEL) return@mapNotNull null
+                val window = body.subList(index + 1, minOf(body.size, index + 8))
+                val readsValue = window.any { ((it as? ReferenceInstruction)?.reference as? MethodReference)?.name == "getValue" }
+                val castsToState = window.any {
+                    it.opcode == Opcode.CHECK_CAST &&
+                        ((it as ReferenceInstruction).reference as TypeReference).type == SIMOSA_REWARD_LADDER_STATE
+                }
+                field.takeIf { readsValue && castsToState }
+            }
+        }.groupingBy { it.name to it.type }.eachCount()
+        check(ladderStateReads.isNotEmpty()) { "ladder state flow not found" }
+        val (ladderStateName, ladderStateType) = ladderStateReads.maxBy { it.value }.key
+
+        ladder.addClaimTarget(
+            kind = "ladder",
+            scopeType = scope.returnType,
+            launch = launch,
+            delay = delay,
+            fireRegisters = 8,
+            fire = """
+                const-string v6, "ladder"
+                invoke-virtual {p0}, $SIMOSA_REWARD_LADDER_VIEW_MODEL->proxmaContext()$CONTEXT
                 move-result-object v0
-                if-eqz v0, :proxma_ladder_claim_end
-                invoke-virtual {v0}, $SIMOSA_REWARD_DATA->getClaimed()Ljava/lang/String;
+                invoke-static {v0, v6}, $AUTO_CLAIM->check($CONTEXT Ljava/lang/String;)Ljava/lang/String;
                 move-result-object v1
-                const-string v5, "true"
-                invoke-static {v1, v5}, Lkotlin/jvm/internal/Intrinsics;->areEqual(Ljava/lang/Object;Ljava/lang/Object;)Z
-                move-result v1
-                if-eqz v1, :proxma_ladder_claim_end
-                invoke-virtual {v0}, $SIMOSA_REWARD_DATA->getCurrentStatus()Ljava/lang/String;
+                if-nez v1, :proxma_skip
+                iget-object v1, p0, $SIMOSA_REWARD_LADDER_VIEW_MODEL->${responseField.name}:$SIMOSA_REWARD_RESPONSE
+                if-eqz v1, :proxma_no_response
+                invoke-virtual {v1}, $SIMOSA_REWARD_RESPONSE->getData()$SIMOSA_REWARD_DATA
+                move-result-object v1
+                if-eqz v1, :proxma_no_response
+                invoke-virtual {v1}, $SIMOSA_REWARD_DATA->getClaimed()Ljava/lang/String;
                 move-result-object v2
-                if-eqz v2, :proxma_ladder_claim_end
-                invoke-virtual {v0}, $SIMOSA_REWARD_DATA->getCurrentDay()Ljava/lang/String;
-                move-result-object v1
-                if-eqz v1, :proxma_ladder_claim_end
-                invoke-virtual {v0}, $SIMOSA_REWARD_DATA->getDaysList()Ljava/util/List;
-                move-result-object v0
-                if-eqz v0, :proxma_ladder_claim_end
-                invoke-interface {v0}, Ljava/util/List;->iterator()Ljava/util/Iterator;
+                const-string v3, "true"
+                invoke-static {v2, v3}, Lkotlin/jvm/internal/Intrinsics;->areEqual(Ljava/lang/Object;Ljava/lang/Object;)Z
+                move-result v2
+                if-nez v2, :proxma_claimed
+                iget-boolean v2, p0, $SIMOSA_REWARD_LADDER_VIEW_MODEL->${claimedFlag.name}:Z
+                if-nez v2, :proxma_flag
+                iget-object v2, p0, $SIMOSA_REWARD_LADDER_VIEW_MODEL->$ladderStateName:$ladderStateType
+                invoke-interface {v2}, $ladderStateType->getValue()Ljava/lang/Object;
+                move-result-object v2
+                if-eqz v2, :proxma_no_rung
+                check-cast v2, $SIMOSA_REWARD_LADDER_STATE
+                invoke-virtual {v2}, $SIMOSA_REWARD_LADDER_STATE->i()$SIMOSA_REWARD_DAY_ITEM
+                move-result-object v2
+                if-eqz v2, :proxma_no_rung
+                invoke-virtual {v1}, $SIMOSA_REWARD_DATA->getCurrentStatus()Ljava/lang/String;
                 move-result-object v3
-                :proxma_ladder_claim_loop
-                invoke-interface {v3}, Ljava/util/Iterator;->hasNext()Z
-                move-result v4
-                if-eqz v4, :proxma_ladder_claim_end
-                invoke-interface {v3}, Ljava/util/Iterator;->next()Ljava/lang/Object;
+                if-nez v3, :proxma_have_status
+                const-string v3, ""
+                :proxma_have_status
+                invoke-static {v0, v6}, $AUTO_CLAIM->latch($CONTEXT Ljava/lang/String;)V
+                invoke-virtual {v2}, $SIMOSA_REWARD_DAY_ITEM->getDay()Ljava/lang/String;
                 move-result-object v4
-                check-cast v4, $SIMOSA_REWARD_DAY_ITEM
-                invoke-virtual {v4}, $SIMOSA_REWARD_DAY_ITEM->getDay()Ljava/lang/String;
-                move-result-object v5
-                invoke-static {v5, v1}, Lkotlin/jvm/internal/Intrinsics;->areEqual(Ljava/lang/Object;Ljava/lang/Object;)Z
-                move-result v5
-                if-eqz v5, :proxma_ladder_claim_loop
-                invoke-virtual {v6, v4, v2}, $SIMOSA_REWARD_LADDER_VIEW_MODEL->L1(${SIMOSA_REWARD_DAY_ITEM}Ljava/lang/String;)V
-                const/4 v5, 0x1
-                invoke-virtual {v6, v5}, $SIMOSA_REWARD_LADDER_VIEW_MODEL->n2(Z)V
-            """.trimIndent(),
-            ExternalLabel("proxma_ladder_claim_end", appliedEnd),
+                invoke-static {v6, v4, v3}, $AUTO_CLAIM->fired(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+                invoke-virtual {p0, v2, v3}, $SIMOSA_REWARD_LADDER_VIEW_MODEL->L1(${SIMOSA_REWARD_DAY_ITEM}Ljava/lang/String;)V
+                return-void
+                :proxma_no_response
+                const-string v1, "skip no-response"
+                goto :proxma_skip
+                :proxma_claimed
+                const-string v1, "skip claimed"
+                goto :proxma_skip
+                :proxma_flag
+                const-string v1, "skip a0"
+                goto :proxma_skip
+                :proxma_no_rung
+                const-string v1, "skip no-rung"
+                :proxma_skip
+                invoke-static {v6, v1}, $AUTO_CLAIM->log(Ljava/lang/String;Ljava/lang/String;)V
+                return-void
+            """,
         )
+
+        // The completion callback `invoke(Throwable?)`: on a normal completion (null), hand over to the
+        // ViewModel. It only calls the public method added above — no private field is touched here.
+        val callback = mutableClassDefBy(callbackType.type)
+        val callbackInvoke = callback.methods.single {
+            it.name == "invoke" && it.parameterTypes == listOf("Ljava/lang/Object;")
+        }
+        val callbackOwner = callback.fields.single { it.type == SIMOSA_REWARD_LADDER_VIEW_MODEL }
+        check((callbackInvoke.implementation?.registerCount ?: 0) >= 3) { "unexpected completion callback layout" }
+        callbackInvoke.addInstructionsWithLabels(
+            0,
+            """
+                if-nez p1, :proxma_applied_skip
+                iget-object v0, p0, ${callback.type}->${callbackOwner.name}:$SIMOSA_REWARD_LADDER_VIEW_MODEL
+                invoke-virtual {v0}, $SIMOSA_REWARD_LADDER_VIEW_MODEL->proxmaOnApplied()V
+            """.trimIndent(),
+            ExternalLabel("proxma_applied_skip", callbackInvoke.instructions.first()),
+        )
+
+        // ---- Result logging (PROXMA_CLAIM success / error), for attempts this patch fired ----
+        val claimListeners = mutableListOf<String>()
+        val checkInCollectors = mutableListOf<String>()
+        classDefForEach { classDef ->
+            if (classDef.type.startsWith("Le4/") && SIMOSA_REWARD_CLAIM_LISTENER in classDef.interfaces) {
+                claimListeners += classDef.type
+            }
+            if (classDef.type.startsWith("Li4/") && classDef.methods.any { m ->
+                    m.name == "a" && m.parameterTypes == listOf(SIMOSA_API_RESOURCES, "Lkotlin/coroutines/Continuation;") &&
+                        m.implementation?.instructions?.any {
+                            ((it as? ReferenceInstruction)?.reference as? StringReference)?.string == "checkin: "
+                        } == true
+                }
+            ) {
+                checkInCollectors += classDef.type
+            }
+        }
+        check(claimListeners.size == 1) { "expected one ladder claim listener, found $claimListeners" }
+        check(checkInCollectors.size == 1) { "expected one check-in result collector, found $checkInCollectors" }
+
+        mutableClassDefBy(claimListeners.single()).methods.forEach { m ->
+            when (m.name) {
+                "onDailyRewardSubscriptionSuccess" -> m.addInstructions(
+                    0,
+                    "invoke-static/range {p1 .. p1}, $AUTO_CLAIM->ladderSuccess(Ljava/lang/Object;)V",
+                )
+                "onDailyRewardSubscriptionFailed" -> m.addInstructions(
+                    0,
+                    "invoke-static/range {p1 .. p2}, $AUTO_CLAIM->ladderFailed(Ljava/lang/String;Ljava/lang/String;)V",
+                )
+            }
+        }
+        mutableClassDefBy(checkInCollectors.single()).methods
+            .single { it.name == "a" && it.parameterTypes.firstOrNull() == SIMOSA_API_RESOURCES }
+            .addInstructions(0, "invoke-static/range {p1 .. p1}, $AUTO_CLAIM->checkinResult(Ljava/lang/Object;)V")
     }
 }
