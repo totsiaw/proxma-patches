@@ -1,3 +1,10 @@
+## [1.23.1](https://github.com/totsiaw/proxma-patches/compare/1.23.0...1.23.1) (2026-10-21)
+
+### Bug Fixes
+
+* **simosa:** claim the Daily Rewards rung on every response, not on screen open ([69ea3b1](https://github.com/totsiaw/proxma-patches/commit/69ea3b1bf88882885a3a2d59679a596cccbaf2c3)), closes [#29](https://github.com/totsiaw/proxma-patches/issues/29) [#29](https://github.com/totsiaw/proxma-patches/issues/29)
+* **simosa:** match the coroutine launch by shape, not the repackaged nb/ class ([af1231c](https://github.com/totsiaw/proxma-patches/commit/af1231cf46d03518c20f06345b8b9e38d1c1ad86))
+
 ## [1.23.0](https://github.com/totsiaw/proxma-patches/compare/1.22.2...1.23.0) (2026-10-21)
 
 ### New Features

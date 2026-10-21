@@ -20,7 +20,7 @@ _Supported version(s): 3.3.5, 3.3.4.2_
 
 | Patch | Description |
 |-------|-------------|
-| **Auto check-in & claim daily reward** | Claims the daily check-in reward on its own: opening the daily-rewards screen no longer waits for the check-in ad, the reward is granted right away. The missed-days restore and the day-10/20/30 milestone claim are untouched. |
+| **Auto check-in & claim daily reward** | Claims today's daily check-in and today's Daily Rewards rung on their own, with no ad and nothing to tap. The missed-days restore and the day-10/20/30 milestone claim are untouched. |
 | **Bypass signature verification** | Disables Simosa's anti-tamper signature check so a re-signed APK launches normally instead of stalling on the splash / "version is not correct" dialog. |
 | **Dark theme (black background)** | Makes Simosa a dark app: screens, sheets, dialogs and menus use the dark palette (near-black background, light text) instead of the light one, including on Android 12+ where the app would otherwise take a light colour scheme from the wallpaper. The app's own red/orange branding and its white cards are left alone so text on them stays readable. |
 | **Remove ads & tracking** | Removes every ad (interstitial, banner, daily-reward) and every tracker (Mixpanel, Firebase, Facebook, AppsFlyer) — app events, network sends, ad-SDK requests (Google Ads / AppLovin / AnyMind / Prebid), SDK auto-collection, and the ipify IP leak. The app then phones home only to its own Jazz API. |
