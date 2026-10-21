@@ -90,9 +90,6 @@ private const val SIMOSA_API_RESOURCES =
 /** `Le4/N` — the Daily Rewards tab's ViewModel (`DailyRewardViewModel` in its metadata). */
 private const val SIMOSA_REWARD_LADDER_VIEW_MODEL = "Le4/N;"
 
-/** `Le4/U` — the ladder state; `i()` is the selected rung the "Claim it Now!" button claims. */
-private const val SIMOSA_REWARD_LADDER_STATE = "Le4/U;"
-
 /** The (unobfuscated) DTO for one rung of the ladder. */
 private const val SIMOSA_REWARD_DAY_ITEM =
     "Lcom/jazz/jazzworld/data/appmodels/dailyreward/response/DaysListItem;"
@@ -418,28 +415,9 @@ val autoCheckInPatch = bytecodePatch(
 
         val responseField = ladder.fields.single { it.type == SIMOSA_REWARD_RESPONSE }
 
-        // The ladder state flow: the field whose value is read and cast to `Le4/U` across the ViewModel.
-        val ladderStateReads = ladder.methods.flatMap { m ->
-            val body = m.implementation?.instructions?.toList() ?: return@flatMap emptyList()
-            body.withIndex().mapNotNull { (index, insn) ->
-                if (insn.opcode != Opcode.IGET_OBJECT) return@mapNotNull null
-                val field = (insn as ReferenceInstruction).reference as FieldReference
-                if (field.definingClass != SIMOSA_REWARD_LADDER_VIEW_MODEL) return@mapNotNull null
-                val window = body.subList(index + 1, minOf(body.size, index + 8))
-                val readsValue = window.any { ((it as? ReferenceInstruction)?.reference as? MethodReference)?.name == "getValue" }
-                val castsToState = window.any {
-                    it.opcode == Opcode.CHECK_CAST &&
-                        ((it as ReferenceInstruction).reference as TypeReference).type == SIMOSA_REWARD_LADDER_STATE
-                }
-                field.takeIf { readsValue && castsToState }
-            }
-        }.groupingBy { it.name to it.type }.eachCount()
-        check(ladderStateReads.isNotEmpty()) { "ladder state flow not found" }
-        val (ladderStateName, ladderStateType) = ladderStateReads.maxBy { it.value }.key
-
         ladder.addClaimTarget(
             kind = "ladder",
-            fireRegisters = 8,
+            fireRegisters = 10,
             fire = """
                 const-string v6, "ladder"
                 invoke-virtual {p0}, $SIMOSA_REWARD_LADDER_VIEW_MODEL->proxmaContext()$CONTEXT
@@ -460,24 +438,40 @@ val autoCheckInPatch = bytecodePatch(
                 if-nez v2, :proxma_claimed
                 iget-boolean v2, p0, $SIMOSA_REWARD_LADDER_VIEW_MODEL->${claimedFlag.name}:Z
                 if-nez v2, :proxma_flag
-                iget-object v2, p0, $SIMOSA_REWARD_LADDER_VIEW_MODEL->$ladderStateName:$ladderStateType
-                invoke-interface {v2}, $ladderStateType->getValue()Ljava/lang/Object;
+                invoke-virtual {v1}, $SIMOSA_REWARD_DATA->getCurrentDay()Ljava/lang/String;
                 move-result-object v2
                 if-eqz v2, :proxma_no_rung
-                check-cast v2, $SIMOSA_REWARD_LADDER_STATE
-                invoke-virtual {v2}, $SIMOSA_REWARD_LADDER_STATE->i()$SIMOSA_REWARD_DAY_ITEM
-                move-result-object v2
-                if-eqz v2, :proxma_no_rung
+                invoke-virtual {v1}, $SIMOSA_REWARD_DATA->getDaysList()Ljava/util/List;
+                move-result-object v3
+                if-eqz v3, :proxma_no_rung
+                invoke-interface {v3}, Ljava/util/List;->iterator()Ljava/util/Iterator;
+                move-result-object v4
+                const/4 v5, 0x0
+                :proxma_rung_loop
+                invoke-interface {v4}, Ljava/util/Iterator;->hasNext()Z
+                move-result v7
+                if-eqz v7, :proxma_rung_done
+                invoke-interface {v4}, Ljava/util/Iterator;->next()Ljava/lang/Object;
+                move-result-object v7
+                check-cast v7, $SIMOSA_REWARD_DAY_ITEM
+                invoke-virtual {v7}, $SIMOSA_REWARD_DAY_ITEM->getDay()Ljava/lang/String;
+                move-result-object v8
+                invoke-static {v8, v2}, Lkotlin/jvm/internal/Intrinsics;->areEqual(Ljava/lang/Object;Ljava/lang/Object;)Z
+                move-result v8
+                if-eqz v8, :proxma_rung_loop
+                move-object v5, v7
+                :proxma_rung_done
+                if-eqz v5, :proxma_no_rung
                 invoke-virtual {v1}, $SIMOSA_REWARD_DATA->getCurrentStatus()Ljava/lang/String;
                 move-result-object v3
                 if-nez v3, :proxma_have_status
                 const-string v3, ""
                 :proxma_have_status
                 invoke-static {v0, v6}, $AUTO_CLAIM->latch($CONTEXT Ljava/lang/String;)V
-                invoke-virtual {v2}, $SIMOSA_REWARD_DAY_ITEM->getDay()Ljava/lang/String;
+                invoke-virtual {v5}, $SIMOSA_REWARD_DAY_ITEM->getDay()Ljava/lang/String;
                 move-result-object v4
                 invoke-static {v6, v4, v3}, $AUTO_CLAIM->fired(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
-                invoke-virtual {p0, v2, v3}, $SIMOSA_REWARD_LADDER_VIEW_MODEL->L1(${SIMOSA_REWARD_DAY_ITEM}Ljava/lang/String;)V
+                invoke-virtual {p0, v5, v3}, $SIMOSA_REWARD_LADDER_VIEW_MODEL->L1(${SIMOSA_REWARD_DAY_ITEM}Ljava/lang/String;)V
                 return-void
                 :proxma_no_response
                 const-string v1, "skip no-response"
