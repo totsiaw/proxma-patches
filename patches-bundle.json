@@ -1,7 +1,7 @@
 {
-  "created_at": "2026-10-21T12:12:32",
-  "description": "## [1.23.1](https://github.com/totsiaw/proxma-patches/compare/1.23.0...1.23.1) (2026-10-21)\n\n### Bug Fixes\n\n* **simosa:** claim the Daily Rewards rung on every response, not on screen open ([69ea3b1](https://github.com/totsiaw/proxma-patches/commit/69ea3b1bf88882885a3a2d59679a596cccbaf2c3)), closes [#29](https://github.com/totsiaw/proxma-patches/issues/29) [#29](https://github.com/totsiaw/proxma-patches/issues/29)\n* **simosa:** match the coroutine launch by shape, not the repackaged nb/ class ([af1231c](https://github.com/totsiaw/proxma-patches/commit/af1231cf46d03518c20f06345b8b9e38d1c1ad86))",
-  "download_url": "https://github.com/totsiaw/proxma-patches/releases/download/1.23.1/patches-1.23.1.mpp",
+  "created_at": "2026-10-21T13:29:06",
+  "description": "## [1.23.2](https://github.com/totsiaw/proxma-patches/compare/1.23.1...1.23.2) (2026-10-21)\n\n### Bug Fixes\n\n* **simosa:** claim from t2's completion callback with correct guards and a daily latch ([33aebbd](https://github.com/totsiaw/proxma-patches/commit/33aebbd3295d3e95cc15b5949b1762bc2b563886))\n* **simosa:** run the auto-claim after the response is applied, with the app's own guards ([0e48a21](https://github.com/totsiaw/proxma-patches/commit/0e48a21fd2d2ea7497ccb1cb2a8c1ba4482ed8dd))",
+  "download_url": "https://github.com/totsiaw/proxma-patches/releases/download/1.23.2/patches-1.23.2.mpp",
   "signature_download_url": "",
-  "version": "1.23.1"
+  "version": "1.23.2"
 }
