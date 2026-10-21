@@ -1,3 +1,10 @@
+## [1.23.2](https://github.com/totsiaw/proxma-patches/compare/1.23.1...1.23.2) (2026-10-21)
+
+### Bug Fixes
+
+* **simosa:** claim from t2's completion callback with correct guards and a daily latch ([33aebbd](https://github.com/totsiaw/proxma-patches/commit/33aebbd3295d3e95cc15b5949b1762bc2b563886))
+* **simosa:** run the auto-claim after the response is applied, with the app's own guards ([0e48a21](https://github.com/totsiaw/proxma-patches/commit/0e48a21fd2d2ea7497ccb1cb2a8c1ba4482ed8dd))
+
 ## [1.23.1](https://github.com/totsiaw/proxma-patches/compare/1.23.0...1.23.1) (2026-10-21)
 
 ### Bug Fixes
