@@ -1,3 +1,13 @@
+## [1.24.0](https://github.com/totsiaw/proxma-patches/compare/1.23.2...1.24.0) (2026-10-21)
+
+### Bug Fixes
+
+* **simosa:** force the identifier accessor without Java 9's canAccess ([c698c88](https://github.com/totsiaw/proxma-patches/commit/c698c88b8b558dda3f97bef73a9bfbd05401a510))
+
+### New Features
+
+* **simosa:** remove Shop, Social+ and Lifestyle tabs ([d202b1e](https://github.com/totsiaw/proxma-patches/commit/d202b1ecb173dc196f6956bec693530e7188c8dc)), closes [#31](https://github.com/totsiaw/proxma-patches/issues/31)
+
 ## [1.23.2](https://github.com/totsiaw/proxma-patches/compare/1.23.1...1.23.2) (2026-10-21)
 
 ### Bug Fixes
