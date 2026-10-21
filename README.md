@@ -93,7 +93,7 @@ _Supported version(s): 18.8.0_
 | Patch | Description |
 |-------|-------------|
 | **Force dark mode** | Forces OLX into dark (night) mode regardless of the system theme, using the app's built-in -night resources via UiModeManager.setApplicationNightMode at startup. |
-| **Remove ads** | Removes native feed ads (Google GMA), the full-height ad slot, the "Buy with Delivery" promo section (bar, cards and View all), and the three item-page banner slots from OLX. Pinned to the 18.8.0 build (matches that build's obfuscated feed and item-page classes). |
+| **Remove ads** | Removes native feed ads (Google GMA), the full-height ad slot, the "Buy with Delivery" promo section (bar, cards and View all), the three item-page banner slots, and the home-screen banner slots from OLX. Pinned to the 18.8.0 build (matches that build's obfuscated feed, item-page and home classes). |
 
 ### OLX India (`com.olx.southasia`)
 
