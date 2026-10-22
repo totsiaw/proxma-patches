@@ -21,6 +21,7 @@ _Supported version(s): 3.3.5, 3.3.4.2_
 | Patch | Description |
 |-------|-------------|
 | **Auto check-in & claim daily reward** | Claims today's daily check-in and today's Daily Rewards rung on their own, once a day, a few seconds after the app has loaded them — no ad and nothing to tap. The missed-days restore and the day-10/20/30 milestone claim are untouched. |
+| **Background daily check-in worker** | Runs the Simosa daily check-in from a background WorkManager job (B26). Adds two-tier token auth, stale-token retry, 409 day-gate, and a status notification. |
 | **Bypass signature verification** | Disables Simosa's anti-tamper signature check so a re-signed APK launches normally instead of stalling on the splash / "version is not correct" dialog. |
 | **Dark theme (black background)** | Makes Simosa a dark app: screens, sheets, dialogs and menus use the dark palette (near-black background, light text) instead of the light one, including on Android 12+ where the app would otherwise take a light colour scheme from the wallpaper. The app's own red/orange branding and its white cards are left alone so text on them stays readable. |
 | **Remove Shop, Social+ and Lifestyle tabs** | Removes the Shop, Social+ and Lifestyle tabs from the bottom bar, leaving Home and Account. Nothing is deleted: those screens still exist and still open if the app routes to them (a deep link, a tile, a notification) — they just no longer take a tab. |

@@ -1,3 +1,15 @@
+## [1.25.0](https://github.com/totsiaw/proxma-patches/compare/1.24.0...1.25.0) (2026-10-22)
+
+### Bug Fixes
+
+* **simosa:** B26 — stale token retry, 409 day-gate, JSON fallback ([6a486e1](https://github.com/totsiaw/proxma-patches/commit/6a486e1c3eed2ab55b2d5e0035659e96b385303a))
+* **simosa:** B27 NO_SESSION cold-start + B28 notification channel ([7b04280](https://github.com/totsiaw/proxma-patches/commit/7b0428036891f42bd7ff7cbd22ba57bada769296))
+
+### New Features
+
+* **simosa:** add background auto-claim worker with token refresh and notification ([8bff6cf](https://github.com/totsiaw/proxma-patches/commit/8bff6cfdb6492aca060c7532e887bea2c2086d58))
+* **simosa:** add BackgroundWorkerPatch — B26 check-in via Kotlin patcher ([d0ee564](https://github.com/totsiaw/proxma-patches/commit/d0ee56495a550a5ef645e256258575af9f432d0a))
+
 ## [1.24.0](https://github.com/totsiaw/proxma-patches/compare/1.23.2...1.24.0) (2026-10-21)
 
 ### Bug Fixes
