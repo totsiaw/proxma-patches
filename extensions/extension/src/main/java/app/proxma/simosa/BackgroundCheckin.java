@@ -62,13 +62,15 @@ public final class BackgroundCheckin {
 
     private BackgroundCheckin() {}
 
-    public static void doCheckIn(Context context) {
+    /** @return true if settled (success, already-done, or permanent skip); false if transient failure (retry-worthy). */
+    public static boolean doCheckIn(Context context) {
         sSession = "none";
         sCheckin = "n/a";
         try {
-            doCheckInInner(context);
+            return doCheckInInner(context);
         } catch (Throwable t) {
             log("CHECKIN_ERR " + t);
+            return false;
         }
     }
 
@@ -84,10 +86,10 @@ public final class BackgroundCheckin {
         return sLastBearer;
     }
 
-    private static void doCheckInInner(Context context) throws Exception {
+    private static boolean doCheckInInner(Context context) throws Exception {
         if (context == null) {
             log("CHECKIN_ERR no_context");
-            return;
+            return true; // no point retrying
         }
         dropLegacyPrefs(context);
 
@@ -96,23 +98,73 @@ public final class BackgroundCheckin {
         if (skip != null) {
             log("CHECKIN_SKIP " + skip);
             sCheckin = skip;
-            return;
+            // Latched = already done today. Still try milestone (it has its own latch).
+            String bearer = acquireBearer(context);
+            if (bearer != null) {
+                MilestoneClaim.tryClaimMilestone(context, bearer);
+            }
+            return true; // settled
         }
 
         String account = AccountScope.id(context);
         if (account == null) {
             log("CHECKIN_SKIP no-account");
             sCheckin = "skip no-account";
-            return;
+            return true; // no account = permanent, don't retry
         }
 
         log("CHECKIN_START");
-        sSession = "cached";
+
+        String bearer = acquireBearer(context);
+        if (bearer == null) {
+            return true; // no token stored = needs app login, retrying won't help
+        }
+        boolean fromCache = "cached".equals(sSession);
+
+        HttpResult result = httpPost(context, CHECKIN_URL, "{}", bearer);
+        if (checkedIn(result)) {
+            MilestoneClaim.tryClaimMilestone(context, bearer);
+            return true;
+        }
+
+        // A stale cached token answers 401/419 "expired": refresh once and replay.
+        if (fromCache && (result.code == 401 || result.code == 419)) {
+            log("CHECKIN_TOKEN_EXPIRED retrying via refresh");
+            String fresh = tryRefresh(context, account);
+            if (fresh != null) {
+                sLastBearer = fresh;
+                HttpResult retried = httpPost(context, CHECKIN_URL, "{}", fresh);
+                if (checkedIn(retried)) {
+                    MilestoneClaim.tryClaimMilestone(context, fresh);
+                    return true;
+                }
+                result = retried;
+            }
+        }
+
+        // 409 "already checked in today" is settled: latch it so the day is not retried.
+        if (result.code == 409) {
+            AutoClaim.latch(context, "checkin");
+            log("CHECKIN_ALREADY_DONE");
+            sCheckin = "already done";
+            MilestoneClaim.tryClaimMilestone(context, bearer);
+            return true;
+        }
+
+        log("CHECKIN_FAIL " + result.code + " " + truncate(result.body));
+        sCheckin = "fail";
+        return false; // transient failure, retry-worthy
+    }
+
+    /** Acquire a bearer token via cache (tier 1) or refresh (tier 2). Sets sSession/sLastBearer. */
+    static String acquireBearer(Context context) {
+        String account = AccountScope.id(context);
+        if (account == null) return null;
 
         String bearer = null;
         boolean fromCache = false;
 
-        // === Tier 1: the app's own cached auth token ===
+        // Tier 1: cached auth token
         try {
             Object cached = getCachedToken(context);
             if (cached != null) {
@@ -132,48 +184,16 @@ public final class BackgroundCheckin {
             log("CHECKIN_CACHE_ERR " + t);
         }
 
-        // === Tier 2: our stored refresh token ===
+        // Tier 2: stored refresh token
         if (bearer == null) {
             bearer = tryRefresh(context, account);
-            fromCache = false;
-        }
-        if (bearer == null) {
-            return;
-        }
-        sLastBearer = bearer;
-
-        HttpResult result = httpPost(context, CHECKIN_URL, "{}", bearer);
-        if (checkedIn(result)) {
-            MilestoneClaim.tryClaimMilestone(context, bearer);
-            return;
         }
 
-        // A stale cached token answers 401/419 "expired": refresh once and replay.
-        if (fromCache && (result.code == 401 || result.code == 419)) {
-            log("CHECKIN_TOKEN_EXPIRED retrying via refresh");
-            String fresh = tryRefresh(context, account);
-            if (fresh != null) {
-                sLastBearer = fresh;
-                HttpResult retried = httpPost(context, CHECKIN_URL, "{}", fresh);
-                if (checkedIn(retried)) {
-                    MilestoneClaim.tryClaimMilestone(context, fresh);
-                    return;
-                }
-                result = retried;
-            }
+        if (bearer != null) {
+            sSession = fromCache ? "cached" : "refreshed";
+            sLastBearer = bearer;
         }
-
-        // 409 "already checked in today" is settled: latch it so the day is not retried.
-        if (result.code == 409) {
-            AutoClaim.latch(context, "checkin");
-            log("CHECKIN_ALREADY_DONE");
-            sCheckin = "already done";
-            MilestoneClaim.tryClaimMilestone(context, bearer);
-            return;
-        }
-
-        log("CHECKIN_FAIL " + result.code + " " + truncate(result.body));
-        sCheckin = "fail";
+        return bearer;
     }
 
     /** Latch and report a 2xx check-in. Returns true when the run is finished. */
@@ -297,7 +317,6 @@ public final class BackgroundCheckin {
             }
 
             log("CHECKIN_REFRESHED");
-            sSession = "refreshed";
             return "Bearer " + accessToken;
         } catch (Throwable t) {
             log("CHECKIN_REFRESH_FAIL " + t);

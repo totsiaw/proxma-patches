@@ -3,6 +3,7 @@ package app.proxma.simosa;
 import android.content.Context;
 import android.util.Log;
 
+import androidx.work.BackoffPolicy;
 import androidx.work.Constraints;
 import androidx.work.ExistingWorkPolicy;
 import androidx.work.NetworkType;
@@ -20,6 +21,7 @@ public final class DailyCheckinWorker extends Worker {
     private static final String TAG = "PROXMA_CLAIM";
     private static final String WORK_IMMEDIATE = "proxma_simosa_now";
     private static final String WORK_MIDNIGHT = "proxma_simosa_midnight";
+    private static final int MAX_RETRIES = 6;
 
     public DailyCheckinWorker(Context context, WorkerParameters parameters) {
         super(context, parameters);
@@ -28,14 +30,32 @@ public final class DailyCheckinWorker extends Worker {
     @Override
     public Result doWork() {
         Context context = getApplicationContext();
+        boolean settled;
         try {
-            BackgroundCheckin.doCheckIn(context);
-            WorkerNotify.notifyStatus(context, claimStatus(context), "next run ~00:05 PKT",
-                "Simosa daily check-in");
+            settled = BackgroundCheckin.doCheckIn(context);
         } catch (Throwable t) {
             Log.w(TAG, "WORKER_ERR " + t);
+            settled = false;
         }
-        // Chain: REPLACE so the next midnight run is always fresh after this one completes
+
+        if (!settled && getRunAttemptCount() < MAX_RETRIES) {
+            Log.i(TAG, "WORKER_RETRY attempt=" + getRunAttemptCount());
+            // Don't chain midnight here — let the retry handle it
+            return Result.retry();
+        }
+
+        // Terminal: either settled or gave up retrying
+        String checkin = BackgroundCheckin.getCheckin();
+        String milestone = MilestoneClaim.getResult();
+        String ladder = claimStatus(context);
+        String next = "next ~00:05 PKT";
+
+        WorkerNotify.notifyStatus(context,
+            ladder,
+            checkin + " | milestone: " + milestone + " | " + next,
+            "Simosa daily check-in");
+
+        // Chain tomorrow's midnight run (REPLACE: this run is done, schedule fresh)
         scheduleMidnight(context, ExistingWorkPolicy.REPLACE);
         return Result.success();
     }
@@ -56,13 +76,13 @@ public final class DailyCheckinWorker extends Worker {
                 .setRequiredNetworkType(NetworkType.CONNECTED)
                 .build();
 
-            // Immediate one-shot for first launch (KEEP = won't re-run if already pending/running)
             OneTimeWorkRequest immediate = new OneTimeWorkRequest.Builder(DailyCheckinWorker.class)
                 .setConstraints(constraints)
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 10, TimeUnit.MINUTES)
                 .build();
             wm.enqueueUniqueWork(WORK_IMMEDIATE, ExistingWorkPolicy.KEEP, immediate);
 
-            // Schedule next midnight run (KEEP = don't cancel a pending midnight if user opens app at 00:04)
+            // KEEP = don't cancel a pending midnight if user opens app at 00:04
             scheduleMidnight(context, ExistingWorkPolicy.KEEP);
 
             Log.i(TAG, "WORKER_SCHEDULED");
@@ -80,6 +100,7 @@ public final class DailyCheckinWorker extends Worker {
             OneTimeWorkRequest midnight = new OneTimeWorkRequest.Builder(DailyCheckinWorker.class)
                 .setConstraints(constraints)
                 .setInitialDelay(delayMs, TimeUnit.MILLISECONDS)
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 10, TimeUnit.MINUTES)
                 .build();
             WorkManager.getInstance(context).enqueueUniqueWork(WORK_MIDNIGHT, policy, midnight);
             Log.i(TAG, "WORKER_MIDNIGHT delay=" + (delayMs / 60000) + "min policy=" + policy);
@@ -97,7 +118,6 @@ public final class DailyCheckinWorker extends Worker {
         target.set(Calendar.SECOND, 0);
         target.set(Calendar.MILLISECOND, 0);
         long delay = target.getTimeInMillis() - System.currentTimeMillis();
-        // Safety: if somehow we computed a negative or tiny delay, push to next day
         if (delay < 60000) {
             delay += 86400000L;
         }
@@ -107,8 +127,8 @@ public final class DailyCheckinWorker extends Worker {
     private static String claimStatus(Context context) {
         String why = AutoClaim.check(context, "ladder");
         if (why == null) {
-            return "not claimed yet";
+            return "ladder: open app to claim";
         }
-        return why.contains("latched") ? "claimed today" : "skipped (" + why + ")";
+        return why.contains("latched") ? "ladder: claimed" : "ladder: " + why;
     }
 }
