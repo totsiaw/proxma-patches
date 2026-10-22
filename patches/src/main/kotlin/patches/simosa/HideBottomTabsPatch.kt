@@ -6,7 +6,10 @@ import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.string
 import com.android.tools.smali.dexlib2.AccessFlags
 import com.android.tools.smali.dexlib2.Opcode
+import com.android.tools.smali.dexlib2.iface.instruction.FiveRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
+import com.android.tools.smali.dexlib2.iface.instruction.formats.Instruction3rc
+import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 import com.android.tools.smali.dexlib2.iface.reference.StringReference
 
 private const val EXTENSION = "extensions/extension.mpe"
@@ -64,8 +67,9 @@ private const val FILTER_TABS_SMALI = """
 val hideBottomTabsPatch = bytecodePatch(
     name = "Remove Shop, Social+ and Lifestyle tabs",
     description = "Removes the Shop, Social+ and Lifestyle tabs from the bottom bar, leaving Home and " +
-        "Account. Nothing is deleted: those screens still exist and still open if the app routes " +
-        "to them (a deep link, a tile, a notification) — they just no longer take a tab.",
+        "Account (plus any optional tab this build enables). Nothing is deleted: those screens " +
+        "still exist and still open if the app routes to them (a deep link, a tile, a " +
+        "notification) — they just no longer take a tab.",
 ) {
     compatibleWith(COMPATIBILITY_SIMOSA)
     // Builder scope, not execute{} — extendWith is a BytecodePatchBuilder call, and the patcher
@@ -82,6 +86,28 @@ val hideBottomTabsPatch = bytecodePatch(
                 "bottomList"
         }
         check(nameIndex >= 0) { "bottomList parameter check not found in bottom bar composable" }
+
+        // The snippet names v10 literally, so the following instruction must be the
+        // checkNotNullParameter on v10 — otherwise a build that keeps the list in another register
+        // would get `filter()` applied to whatever v10 happens to hold, patch with exit 0, and
+        // crash the main screen with a VerifyError. Fail the patch loudly instead.
+        val checkInstruction = instructions.getOrNull(nameIndex + 1)
+        val checkReference = (checkInstruction as? ReferenceInstruction)?.reference as? MethodReference
+        check(
+            checkInstruction?.opcode == Opcode.INVOKE_STATIC &&
+                checkReference?.definingClass == "Lkotlin/jvm/internal/Intrinsics;" &&
+                checkReference.name == "checkNotNullParameter",
+        ) { "bottomList is not followed by Intrinsics.checkNotNullParameter" }
+        val listRegister = when {
+            checkInstruction is FiveRegisterInstruction -> checkInstruction.registerC
+            checkInstruction is Instruction3rc -> checkInstruction.startRegister
+            else -> -1
+        }
+        check(listRegister == 10) {
+            "bottomList lives in v$listRegister on this build, expected v10 — refusing to inject " +
+                "into the wrong register"
+        }
+
         // nameIndex = const-string "bottomList", nameIndex + 1 = checkNotNullParameter(v10, name)
         method.addInstructions(nameIndex + 2, FILTER_TABS_SMALI.trimIndent())
     }
