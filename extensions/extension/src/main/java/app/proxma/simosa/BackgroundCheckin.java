@@ -101,7 +101,6 @@ public final class BackgroundCheckin {
             sCheckin = skip;
             // Latched = already done today. Still try milestone (it has its own latch).
             String bearer = acquireBearer(context);
-            sCheckin = skip; // restore: acquireBearer may clobber via tryRefresh
             if (bearer != null) {
                 MilestoneClaim.tryClaimMilestone(context, bearer);
             }
@@ -119,14 +118,17 @@ public final class BackgroundCheckin {
 
         String bearer = acquireBearer(context);
         if (bearer == null) {
-            if ("no token".equals(sCheckin)) return true; // permanent: needs app login
+            if (loadToken(context, account) == null) {
+                sCheckin = "no token";
+                return true; // permanent: needs app login
+            }
             sCheckin = "refresh fail";
             return false; // transient: network/server issue, retry
         }
         boolean fromCache = "cached".equals(sSession);
 
         HttpResult result = httpPost(context, CHECKIN_URL, "{}", bearer);
-        if (checkedIn(result)) {
+        if (checkedIn(context, result)) {
             MilestoneClaim.tryClaimMilestone(context, bearer);
             return true;
         }
@@ -138,7 +140,7 @@ public final class BackgroundCheckin {
             if (fresh != null) {
                 sLastBearer = fresh;
                 HttpResult retried = httpPost(context, CHECKIN_URL, "{}", fresh);
-                if (checkedIn(retried)) {
+                if (checkedIn(context, retried)) {
                     MilestoneClaim.tryClaimMilestone(context, fresh);
                     return true;
                 }
@@ -213,11 +215,13 @@ public final class BackgroundCheckin {
     }
 
     /** Latch and report a 2xx check-in. Returns true when the run is finished. */
-    private static boolean checkedIn(HttpResult result) {
+    private static boolean checkedIn(Context context, HttpResult result) {
         if (result.code < 200 || result.code >= 300) {
             return false;
         }
+        AutoClaim.latch(context, "checkin");
         log("CHECKIN_OK " + result.code + " " + truncate(result.body));
+        sCheckin = "done";
         return true;
     }
 
@@ -298,7 +302,6 @@ public final class BackgroundCheckin {
         String[] token = loadToken(context, account);
         if (token == null) {
             log("CHECKIN_NO_TOKEN no_refresh");
-            sCheckin = "no token";
             return null;
         }
 

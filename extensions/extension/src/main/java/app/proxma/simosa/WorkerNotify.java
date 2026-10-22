@@ -53,8 +53,8 @@ public final class WorkerNotify {
             }
 
             String body = "Session: " + BackgroundCheckin.getSession()
-                + "\nClaim: " + claimStatus
                 + "\nCheckin: " + BackgroundCheckin.getCheckin()
+                + "\n" + claimStatus
                 + "\nMilestone: " + MilestoneClaim.getResult()
                 + "\nNext: " + nextAction;
 

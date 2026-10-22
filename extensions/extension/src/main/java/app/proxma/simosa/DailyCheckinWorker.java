@@ -38,17 +38,22 @@ public final class DailyCheckinWorker extends Worker {
             settled = false;
         }
 
-        if (!settled && getRunAttemptCount() < MAX_RETRIES) {
-            Log.i(TAG, "WORKER_RETRY attempt=" + getRunAttemptCount());
-            // Don't chain midnight here — let the retry handle it
+        boolean ladderSettled = false;
+        try {
+            ladderSettled = LadderClaim.tryClaimLadder(context);
+        } catch (Throwable t) {
+            Log.w(TAG, "LADDER_ERR " + t);
+        }
+
+        if ((!settled || !ladderSettled) && getRunAttemptCount() < MAX_RETRIES) {
+            Log.i(TAG, "WORKER_RETRY attempt=" + getRunAttemptCount()
+                + " checkin=" + settled + " ladder=" + ladderSettled);
             return Result.retry();
         }
 
         // Terminal: either settled or gave up retrying
-        String ladder = claimStatus(context);
-
         WorkerNotify.notifyStatus(context,
-            ladder,
+            "Ladder: " + LadderClaim.getResult(),
             "next ~00:05 PKT",
             "Simosa daily check-in");
 
@@ -75,6 +80,7 @@ public final class DailyCheckinWorker extends Worker {
 
             OneTimeWorkRequest immediate = new OneTimeWorkRequest.Builder(DailyCheckinWorker.class)
                 .setConstraints(constraints)
+                .setInitialDelay(30, TimeUnit.SECONDS)
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 10, TimeUnit.MINUTES)
                 .build();
             wm.enqueueUniqueWork(WORK_IMMEDIATE, ExistingWorkPolicy.KEEP, immediate);
@@ -121,11 +127,4 @@ public final class DailyCheckinWorker extends Worker {
         return delay;
     }
 
-    private static String claimStatus(Context context) {
-        String why = AutoClaim.check(context, "ladder");
-        if (why == null) {
-            return "ladder: open app to claim";
-        }
-        return why.contains("latched") ? "ladder: claimed" : "ladder: " + why;
-    }
 }
