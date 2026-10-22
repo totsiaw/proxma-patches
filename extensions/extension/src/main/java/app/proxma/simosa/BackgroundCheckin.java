@@ -55,6 +55,7 @@ public final class BackgroundCheckin {
     /** Outcome of the last run, read by {@link WorkerNotify}. */
     static String sSession = "none";
     static String sCheckin = "n/a";
+    static String sLastBearer = null;
 
     /** Resolved once from PackageInfo; the check-in API keys its build header on it. */
     private static String sAppBuild;
@@ -77,6 +78,10 @@ public final class BackgroundCheckin {
 
     public static String getCheckin() {
         return sCheckin;
+    }
+
+    public static String getLastBearer() {
+        return sLastBearer;
     }
 
     private static void doCheckInInner(Context context) throws Exception {
@@ -135,9 +140,11 @@ public final class BackgroundCheckin {
         if (bearer == null) {
             return;
         }
+        sLastBearer = bearer;
 
         HttpResult result = httpPost(context, CHECKIN_URL, "{}", bearer);
         if (checkedIn(result)) {
+            MilestoneClaim.tryClaimMilestone(context, bearer);
             return;
         }
 
@@ -146,8 +153,10 @@ public final class BackgroundCheckin {
             log("CHECKIN_TOKEN_EXPIRED retrying via refresh");
             String fresh = tryRefresh(context, account);
             if (fresh != null) {
+                sLastBearer = fresh;
                 HttpResult retried = httpPost(context, CHECKIN_URL, "{}", fresh);
                 if (checkedIn(retried)) {
+                    MilestoneClaim.tryClaimMilestone(context, fresh);
                     return;
                 }
                 result = retried;
@@ -159,6 +168,7 @@ public final class BackgroundCheckin {
             AutoClaim.latch(context, "checkin");
             log("CHECKIN_ALREADY_DONE");
             sCheckin = "already done";
+            MilestoneClaim.tryClaimMilestone(context, bearer);
             return;
         }
 
