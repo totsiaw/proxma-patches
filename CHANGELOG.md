@@ -1,3 +1,9 @@
+## [1.26.7](https://github.com/totsiaw/proxma-patches/compare/1.26.6...1.26.7) (2026-10-22)
+
+### Bug Fixes
+
+* auto-claim daily reward ladder from background worker ([a876bba](https://github.com/totsiaw/proxma-patches/commit/a876bba4f3ea85eb0f0b9bb1c96d979f43f688c2))
+
 ## [1.26.6](https://github.com/totsiaw/proxma-patches/compare/1.26.5...1.26.6) (2026-10-22)
 
 ### Bug Fixes
