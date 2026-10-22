@@ -5,7 +5,9 @@ import android.util.Log;
 
 import androidx.work.Constraints;
 import androidx.work.ExistingPeriodicWorkPolicy;
+import androidx.work.ExistingWorkPolicy;
 import androidx.work.NetworkType;
+import androidx.work.OneTimeWorkRequest;
 import androidx.work.PeriodicWorkRequest;
 import androidx.work.WorkManager;
 import androidx.work.Worker;
@@ -60,15 +62,20 @@ public final class DailyCheckinWorker extends Worker {
             Constraints constraints = new Constraints.Builder()
                 .setRequiredNetworkType(NetworkType.CONNECTED)
                 .build();
-            PeriodicWorkRequest request = new PeriodicWorkRequest.Builder(
+            PeriodicWorkRequest periodic = new PeriodicWorkRequest.Builder(
                 DailyCheckinWorker.class, INTERVAL_HOURS, TimeUnit.HOURS)
                 .setConstraints(constraints)
                 .build();
-            WorkManager.getInstance(context)
-                .enqueueUniquePeriodicWork(UNIQUE_WORK, ExistingPeriodicWorkPolicy.KEEP, request);
+            WorkManager wm = WorkManager.getInstance(context);
+            wm.enqueueUniquePeriodicWork(UNIQUE_WORK, ExistingPeriodicWorkPolicy.KEEP, periodic);
+
+            OneTimeWorkRequest immediate = new OneTimeWorkRequest.Builder(DailyCheckinWorker.class)
+                .setConstraints(constraints)
+                .build();
+            wm.enqueueUniqueWork(UNIQUE_WORK + "_now", ExistingWorkPolicy.KEEP, immediate);
+
             Log.i(TAG, "WORKER_SCHEDULED " + UNIQUE_WORK);
         } catch (Throwable t) {
-            // WorkManager missing or not initialised is not worth crashing a launch over.
             Log.w(TAG, "WORKER_SCHEDULE_ERR " + t);
         }
     }
