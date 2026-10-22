@@ -180,7 +180,7 @@ private fun isCoroutineLaunch(reference: Any?) =
 
 
 /** Adds a public final method with an empty body and fills it from [smali]. */
-private fun MutableClass.addProxmaMethod(
+internal fun MutableClass.addProxmaMethod(
     name: String,
     parameters: List<String>,
     returnType: String,
@@ -205,7 +205,7 @@ private fun MutableClass.addProxmaMethod(
  * Makes [viewModel] a `ClaimTarget`: context accessor, the [fire] body, and `proxmaOnApplied()`
  * (the hook entry point that schedules [kind]).
  */
-private fun MutableClass.addClaimTarget(
+internal fun MutableClass.addClaimTarget(
     kind: String,
     fireRegisters: Int,
     fire: String,
