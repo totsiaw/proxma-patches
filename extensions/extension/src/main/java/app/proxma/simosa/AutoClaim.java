@@ -7,7 +7,6 @@ import android.os.Looper;
 import android.util.Log;
 
 import java.lang.reflect.Method;
-import java.security.MessageDigest;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
@@ -61,49 +60,21 @@ public final class AutoClaim {
     }
 
     /**
-     * {@code proxma_claim_<msisdn-hash>_<yyyyMMdd>}, or null when no account is signed in — in which
+     * {@code proxma_claim_<account>_<yyyyMMdd>}, or null when no account is signed in — in which
      * case the attempt is skipped rather than fired without a latch.
      */
     private static String key(Context context) {
-        if (context == null) {
+        String account = AccountScope.id(context);
+        if (account == null) {
             return null;
         }
         try {
-            Class<?> dataManager = Class.forName("com.jazz.jazzworld.data.manager.DataManager");
-            Object companion = dataManager.getField("Companion").get(null);
-            if (companion == null) {
-                return null;
-            }
-            Method getInstance = companion.getClass().getMethod("getInstance");
-            Object instance = getInstance.invoke(companion);
-            if (instance == null) {
-                return null;
-            }
-            Method getUserData = dataManager.getMethod("getUserData", Context.class);
-            Object userData = getUserData.invoke(instance, context);
-            if (userData == null) {
-                return null;
-            }
-            Object msisdn = userData.getClass().getMethod("getMsisdn").invoke(userData);
-            if (!(msisdn instanceof String) || ((String) msisdn).isEmpty()) {
-                return null;
-            }
-            byte[] digest = MessageDigest.getInstance("SHA-256").digest(((String) msisdn).getBytes("UTF-8"));
-            StringBuilder builder = new StringBuilder(PREFIX);
-            for (int i = 0; i < 6; i++) {
-                builder.append(hex(digest[i] & 0xff));
-            }
             SimpleDateFormat format = new SimpleDateFormat("yyyyMMdd", Locale.US);
             format.setTimeZone(TimeZone.getTimeZone("Asia/Karachi"));
-            return builder.append('_').append(format.format(new Date())).toString();
+            return PREFIX + account + '_' + format.format(new Date());
         } catch (Throwable t) {
             return null;
         }
-    }
-
-    private static String hex(int value) {
-        String digits = "0123456789abcdef";
-        return "" + digits.charAt((value >> 4) & 0xf) + digits.charAt(value & 0xf);
     }
 
     /** Null when the attempt may proceed, otherwise the reason it must not. */
