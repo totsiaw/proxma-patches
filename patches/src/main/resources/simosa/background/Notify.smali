@@ -798,10 +798,10 @@
     check-cast v3, Landroid/app/NotificationManager;
     if-eqz v3, :ns_ret
 
-    const-string v4, "morphe_auto"
+    const-string v4, "proxma_auto"
 
     new-instance v5, Landroid/app/NotificationChannel;
-    const/4 v6, 0x3
+    const/4 v6, 0x4
     const-string v7, "Auto Status"
     invoke-direct {v5, v4, v7, v6}, Landroid/app/NotificationChannel;-><init>(Ljava/lang/String;Ljava/lang/CharSequence;I)V
     invoke-virtual {v3, v5}, Landroid/app/NotificationManager;->createNotificationChannel(Landroid/app/NotificationChannel;)V
