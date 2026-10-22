@@ -1,3 +1,9 @@
+## [1.25.1](https://github.com/totsiaw/proxma-patches/compare/1.25.0...1.25.1) (2026-10-22)
+
+### Bug Fixes
+
+* **simosa:** add the daily check-in worker instead of hooking a class the app lacks ([57e91dc](https://github.com/totsiaw/proxma-patches/commit/57e91dc99a4c10328c6fc8cbf58160c04cd01f10)), closes [#41](https://github.com/totsiaw/proxma-patches/issues/41)
+
 ## [1.25.0](https://github.com/totsiaw/proxma-patches/compare/1.24.0...1.25.0) (2026-10-22)
 
 ### Bug Fixes
