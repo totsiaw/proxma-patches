@@ -31,6 +31,7 @@ public final class BackgroundCheckin {
 
     static String sSession = "none";
     static String sCheckin = "n/a";
+    static String sLastBearer = null;
 
     private BackgroundCheckin() {}
 
@@ -46,6 +47,7 @@ public final class BackgroundCheckin {
 
     public static String getSession() { return sSession; }
     public static String getCheckin() { return sCheckin; }
+    public static String getLastBearer() { return sLastBearer; }
 
     private static void doCheckInInner(Context context) throws Exception {
         SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, 0);
@@ -96,6 +98,7 @@ public final class BackgroundCheckin {
         }
 
         if (bearer == null) return;
+        sLastBearer = bearer;
 
         // === POST check-in ===
         HttpResult r = httpPost(CHECKIN_URL, "{}", bearer);
@@ -104,6 +107,7 @@ public final class BackgroundCheckin {
             log("CHECKIN_OK " + r.code + " " + truncate(r.body));
             prefs.edit().putInt("checkin_day", dayKey).apply();
             sCheckin = "checked in";
+            MilestoneClaim.tryClaimMilestone(context, bearer);
             return;
         }
 
@@ -112,11 +116,13 @@ public final class BackgroundCheckin {
             log("CHECKIN_TOKEN_EXPIRED retrying via refresh");
             String fresh = tryRefresh(prefs);
             if (fresh != null) {
+                sLastBearer = fresh;
                 HttpResult r2 = httpPost(CHECKIN_URL, "{}", fresh);
                 if (r2.code >= 200 && r2.code < 300) {
                     log("CHECKIN_OK " + r2.code + " " + truncate(r2.body));
                     prefs.edit().putInt("checkin_day", dayKey).apply();
                     sCheckin = "checked in";
+                    MilestoneClaim.tryClaimMilestone(context, fresh);
                     return;
                 }
                 r = r2;
@@ -126,6 +132,9 @@ public final class BackgroundCheckin {
         // B26: 409 → mark checkin_day (already done today)
         if (r.code == 409) {
             prefs.edit().putInt("checkin_day", dayKey).apply();
+            sCheckin = "already done";
+            MilestoneClaim.tryClaimMilestone(context, bearer);
+            return;
         }
 
         log("CHECKIN_FAIL " + r.code + " " + truncate(r.body));
