@@ -1,3 +1,10 @@
+## [1.26.2](https://github.com/totsiaw/proxma-patches/compare/1.26.1...1.26.2) (2026-10-22)
+
+### Bug Fixes
+
+* **simosa:** hide the Social+ tab as well, by its own route ([d15e804](https://github.com/totsiaw/proxma-patches/commit/d15e804a78bfca6935c1769f3da1189c66e7a2f1)), closes [#31](https://github.com/totsiaw/proxma-patches/issues/31)
+* **simosa:** refuse to inject the tab filter into an unexpected register ([081d90a](https://github.com/totsiaw/proxma-patches/commit/081d90adbab9119a5818245db763e0256570970d))
+
 ## [1.25.1](https://github.com/totsiaw/proxma-patches/compare/1.25.0...1.25.1) (2026-10-22)
 
 ### Bug Fixes
