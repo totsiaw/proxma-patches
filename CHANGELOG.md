@@ -1,3 +1,9 @@
+## [1.26.6](https://github.com/totsiaw/proxma-patches/compare/1.26.5...1.26.6) (2026-10-22)
+
+### Bug Fixes
+
+* **simosa:** refresh stale token on milestone 419/401 ([51dc4f4](https://github.com/totsiaw/proxma-patches/commit/51dc4f4dc6e6a610448d58311efd277949c81737))
+
 ## [1.26.5](https://github.com/totsiaw/proxma-patches/compare/1.26.4...1.26.5) (2026-10-22)
 
 ### Bug Fixes
