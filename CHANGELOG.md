@@ -1,3 +1,9 @@
+## [1.26.3](https://github.com/totsiaw/proxma-patches/compare/1.26.2...1.26.3) (2026-10-22)
+
+### Bug Fixes
+
+* **simosa:** schedule worker at 00:05 PKT instead of 24h drift ([2141977](https://github.com/totsiaw/proxma-patches/commit/214197741e0b79dbb77ebb545b1237ef377e547e))
+
 ## [1.26.2](https://github.com/totsiaw/proxma-patches/compare/1.26.1...1.26.2) (2026-10-22)
 
 ### Bug Fixes
