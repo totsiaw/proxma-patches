@@ -63,11 +63,36 @@
 
     if-nez v1, :have_session
 
-    const-string v0, "NO_SESSION K8.F.Y=null"
+    const-string v0, "NO_SESSION K8.F.Y=null skip_ladder run_checkin"
+    invoke-static {v0}, Lmorphe/Notify;->log(Ljava/lang/String;)V
+    invoke-static {v9}, Lcom/jazz/jazzworld/presentation/ClaimWorker;->doCheckIn(Landroid/content/Context;)V
+
+    invoke-static {}, Lmorphe/Notify;->isClaimedToday()Z
+    move-result v0
+    if-eqz v0, :no_session_retry
+
+    const-string v0, "WORKER_OK checkin_only stop"
     invoke-static {v0}, Lmorphe/Notify;->log(Ljava/lang/String;)V
     invoke-static {v9}, Lmorphe/Notify;->armTomorrow(Landroid/content/Context;)V
     invoke-static {}, Landroidx/work/ListenableWorker$Result;->success()Landroidx/work/ListenableWorker$Result;
     move-result-object v0
+    const-string v2, "checkin only (no session)"
+    const-string v3, "tomorrow ~00:35"
+    const-string v4, "Claimed"
+    invoke-static {v9, v2, v3, v4}, Lcom/jazz/jazzworld/presentation/ClaimWorker;->doNotify(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+    return-object v0
+
+    :no_session_retry
+    const-string v0, "WORKER_RETRY no_session checkin_pending 10m"
+    invoke-static {v0}, Lmorphe/Notify;->log(Ljava/lang/String;)V
+    const-wide/16 v0, 0xa
+    invoke-static {v9, v0, v1}, Lmorphe/Notify;->armIn(Landroid/content/Context;J)V
+    invoke-static {}, Landroidx/work/ListenableWorker$Result;->success()Landroidx/work/ListenableWorker$Result;
+    move-result-object v0
+    const-string v2, "no session, checkin pending"
+    const-string v3, "~10 min"
+    const-string v4, "Retry"
+    invoke-static {v9, v2, v3, v4}, Lcom/jazz/jazzworld/presentation/ClaimWorker;->doNotify(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
     return-object v0
 
     :have_session
