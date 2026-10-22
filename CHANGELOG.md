@@ -1,3 +1,9 @@
+## [1.26.5](https://github.com/totsiaw/proxma-patches/compare/1.26.4...1.26.5) (2026-10-22)
+
+### Bug Fixes
+
+* **simosa:** retry transient refresh failures, fix notification bugs ([105f94f](https://github.com/totsiaw/proxma-patches/commit/105f94fca5cce4c0459dbe430bb8149b6b17793b))
+
 ## [1.26.4](https://github.com/totsiaw/proxma-patches/compare/1.26.3...1.26.4) (2026-10-22)
 
 ### Bug Fixes

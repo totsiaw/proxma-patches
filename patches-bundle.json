@@ -1,7 +1,7 @@
 {
-  "created_at": "2026-10-22T15:53:08",
-  "description": "## [1.26.4](https://github.com/totsiaw/proxma-patches/compare/1.26.3...1.26.4) (2026-10-22)\n\n### Bug Fixes\n\n* **simosa:** retry on transient failure with exponential backoff ([0484bb3](https://github.com/totsiaw/proxma-patches/commit/0484bb3687e4bcfa77d7dc96b18d43870350628d))",
-  "download_url": "https://github.com/totsiaw/proxma-patches/releases/download/1.26.4/patches-1.26.4.mpp",
+  "created_at": "2026-10-22T15:59:27",
+  "description": "## [1.26.5](https://github.com/totsiaw/proxma-patches/compare/1.26.4...1.26.5) (2026-10-22)\n\n### Bug Fixes\n\n* **simosa:** retry transient refresh failures, fix notification bugs ([105f94f](https://github.com/totsiaw/proxma-patches/commit/105f94fca5cce4c0459dbe430bb8149b6b17793b))",
+  "download_url": "https://github.com/totsiaw/proxma-patches/releases/download/1.26.5/patches-1.26.5.mpp",
   "signature_download_url": "",
-  "version": "1.26.4"
+  "version": "1.26.5"
 }
