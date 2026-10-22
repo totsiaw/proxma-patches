@@ -55,6 +55,7 @@ public final class WorkerNotify {
             String body = "Session: " + BackgroundCheckin.getSession()
                 + "\nClaim: " + claimStatus
                 + "\nCheckin: " + BackgroundCheckin.getCheckin()
+                + "\nMilestone: " + MilestoneClaim.getResult()
                 + "\nNext: " + nextAction;
 
             Notification.Builder builder;
