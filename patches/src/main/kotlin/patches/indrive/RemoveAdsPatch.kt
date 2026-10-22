@@ -118,7 +118,10 @@ val removeAdsPatch = bytecodePatch(
                 appendLine("    sget-object $scratch, $TOGGLE_CONSTANTS->INSTANCE:$TOGGLE_CONSTANTS")
                 appendLine("    invoke-virtual {$scratch}, $TOGGLE_CONSTANTS->$getter()$toggleType")
                 appendLine("    move-result-object $scratch")
-                appendLine("    if-eq p1, $scratch, :indrive_ads_on_$i")
+                // Branch *away* when the toggle is not one of ours. `if-eq` here (as shipped in
+                // 1.20.0-1.22.2) inverted the whole thing: every unrelated toggle fell through to
+                // `return false`, and the Google Ads toggles themselves skipped the check.
+                appendLine("    if-ne p1, $scratch, :indrive_ads_on_$i")
                 appendLine("    const/4 $scratch, 0x0")
                 appendLine("    return $scratch")
                 appendLine("    :indrive_ads_on_$i")
