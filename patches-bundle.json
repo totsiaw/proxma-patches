@@ -1,7 +1,7 @@
 {
-  "created_at": "2026-10-22T15:41:54",
-  "description": "## [1.26.3](https://github.com/totsiaw/proxma-patches/compare/1.26.2...1.26.3) (2026-10-22)\n\n### Bug Fixes\n\n* **simosa:** schedule worker at 00:05 PKT instead of 24h drift ([2141977](https://github.com/totsiaw/proxma-patches/commit/214197741e0b79dbb77ebb545b1237ef377e547e))",
-  "download_url": "https://github.com/totsiaw/proxma-patches/releases/download/1.26.3/patches-1.26.3.mpp",
+  "created_at": "2026-10-22T15:53:08",
+  "description": "## [1.26.4](https://github.com/totsiaw/proxma-patches/compare/1.26.3...1.26.4) (2026-10-22)\n\n### Bug Fixes\n\n* **simosa:** retry on transient failure with exponential backoff ([0484bb3](https://github.com/totsiaw/proxma-patches/commit/0484bb3687e4bcfa77d7dc96b18d43870350628d))",
+  "download_url": "https://github.com/totsiaw/proxma-patches/releases/download/1.26.4/patches-1.26.4.mpp",
   "signature_download_url": "",
-  "version": "1.26.3"
+  "version": "1.26.4"
 }

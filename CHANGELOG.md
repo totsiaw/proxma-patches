@@ -1,3 +1,9 @@
+## [1.26.4](https://github.com/totsiaw/proxma-patches/compare/1.26.3...1.26.4) (2026-10-22)
+
+### Bug Fixes
+
+* **simosa:** retry on transient failure with exponential backoff ([0484bb3](https://github.com/totsiaw/proxma-patches/commit/0484bb3687e4bcfa77d7dc96b18d43870350628d))
+
 ## [1.26.3](https://github.com/totsiaw/proxma-patches/compare/1.26.2...1.26.3) (2026-10-22)
 
 ### Bug Fixes
