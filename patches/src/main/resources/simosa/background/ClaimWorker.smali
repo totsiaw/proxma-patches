@@ -303,6 +303,7 @@
     invoke-virtual {v2, v1}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
     invoke-virtual {v2}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
     move-result-object v11
+    const/4 v12, 0x1
     goto :do_checkin_request
 
     # === Refresh token fallback ===
@@ -411,10 +412,13 @@
     # Parse JSON: unwrap data object, extract access_token
     new-instance v3, Lorg/json/JSONObject;
     invoke-direct {v3, v2}, Lorg/json/JSONObject;-><init>(Ljava/lang/String;)V
+    move-object v6, v3
     const-string v4, "data"
     invoke-virtual {v3, v4}, Lorg/json/JSONObject;->optJSONObject(Ljava/lang/String;)Lorg/json/JSONObject;
     move-result-object v3
-    if-eqz v3, :refresh_no_at
+    if-nez v3, :have_data_wrapper
+    move-object v3, v6
+    :have_data_wrapper
 
     const-string v4, "access_token"
     invoke-virtual {v3, v4}, Lorg/json/JSONObject;->optString(Ljava/lang/String;)Ljava/lang/String;
@@ -464,6 +468,7 @@
     invoke-virtual {v2, v4}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
     invoke-virtual {v2}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
     move-result-object v11
+    const/4 v12, 0x0
     goto :do_checkin_request
 
     :refresh_no_at
@@ -608,6 +613,30 @@
     return-void
 
     :ci_fail
+    # 401 or 419 with cached token -> fall through to refresh
+    if-eqz v12, :ci_not_auth_fail
+    const/16 v5, 0x191
+    if-eq v0, v5, :ci_auth_retry
+    const/16 v5, 0x1a3
+    if-eq v0, v5, :ci_auth_retry
+    goto :ci_not_auth_fail
+    :ci_auth_retry
+    const-string v5, "CHECKIN_TOKEN_EXPIRED retrying via refresh"
+    invoke-static {v5}, Lmorphe/Notify;->log(Ljava/lang/String;)V
+    goto :try_refresh_token
+
+    :ci_not_auth_fail
+    # 409 -> mark checkin_day (already done today)
+    const/16 v5, 0x199
+    if-ne v0, v5, :ci_not_409
+    invoke-interface {v9}, Landroid/content/SharedPreferences;->edit()Landroid/content/SharedPreferences$Editor;
+    move-result-object v5
+    const-string v6, "checkin_day"
+    invoke-interface {v5, v6, v10}, Landroid/content/SharedPreferences$Editor;->putInt(Ljava/lang/String;I)Landroid/content/SharedPreferences$Editor;
+    invoke-interface {v5}, Landroid/content/SharedPreferences$Editor;->apply()V
+    :ci_not_409
+
+    # Log the failure
     const-string v5, "CHECKIN_FAIL "
     invoke-virtual {v4, v5}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
     invoke-virtual {v4, v0}, Ljava/lang/StringBuilder;->append(I)Ljava/lang/StringBuilder;
