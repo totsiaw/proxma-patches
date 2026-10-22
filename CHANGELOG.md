@@ -1,3 +1,9 @@
+## [1.26.8](https://github.com/totsiaw/proxma-patches/compare/1.26.7...1.26.8) (2026-10-22)
+
+### Bug Fixes
+
+* resolve cold-start no-account skip in background worker ([a05eccb](https://github.com/totsiaw/proxma-patches/commit/a05eccbb8af6b04032ed17b7200d75b46ed4c242))
+
 ## [1.26.7](https://github.com/totsiaw/proxma-patches/compare/1.26.6...1.26.7) (2026-10-22)
 
 ### Bug Fixes
