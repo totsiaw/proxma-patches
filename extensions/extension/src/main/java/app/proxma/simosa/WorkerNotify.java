@@ -4,23 +4,22 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Context;
-import android.content.SharedPreferences;
 import android.os.Build;
 import android.util.Log;
 
-import java.util.Calendar;
-import java.util.TimeZone;
-
 /**
- * Notification and day-tracking for the background worker (patcher version).
- * Replaces the smali {@code morphe/Notify} class used in the manual build.
+ * The notification {@link DailyCheckinWorker} posts after each run.
  *
- * <p>Channel: {@code proxma_auto} at IMPORTANCE_HIGH (heads-up banner).
+ * <p>Channel: {@code proxma_auto} at IMPORTANCE_HIGH (heads-up banner), so the post survives a
+ * notification-permission check and a missing app icon without ever throwing.
+ *
+ * <p>Day tracking used to live here as well ({@code claimed_day}/{@code att_day} in prefs
+ * {@code proxma_claim}, install-global). It is gone: the only latch is {@link AutoClaim}'s, which
+ * is per account and per day, and nothing here should be able to disagree with it.
  */
 public final class WorkerNotify {
 
     private static final String TAG = "PROXMA_CLAIM";
-    private static final String PREFS_NAME = "proxma_claim";
     private static final String CHANNEL_ID = "proxma_auto";
     private static final String CHANNEL_NAME = "Auto Status";
     private static final int NOTIF_ID = 1003;
@@ -37,23 +36,25 @@ public final class WorkerNotify {
             }
 
             NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
-            if (nm == null) return;
+            if (nm == null) {
+                return;
+            }
 
             if (Build.VERSION.SDK_INT >= 26) {
-                NotificationChannel ch = new NotificationChannel(CHANNEL_ID, CHANNEL_NAME,
+                NotificationChannel channel = new NotificationChannel(CHANNEL_ID, CHANNEL_NAME,
                     NotificationManager.IMPORTANCE_HIGH);
-                ch.setDescription("Background worker status");
-                nm.createNotificationChannel(ch);
+                channel.setDescription("Background worker status");
+                nm.createNotificationChannel(channel);
             }
 
             int icon = context.getApplicationInfo().icon;
-            if (icon == 0) return;
+            if (icon == 0) {
+                return;
+            }
 
-            String session = BackgroundCheckin.getSession();
-            String checkin = BackgroundCheckin.getCheckin();
-            String body = "Session: " + session
+            String body = "Session: " + BackgroundCheckin.getSession()
                 + "\nClaim: " + claimStatus
-                + "\nCheckin: " + checkin
+                + "\nCheckin: " + BackgroundCheckin.getCheckin()
                 + "\nNext: " + nextAction;
 
             Notification.Builder builder;
@@ -77,36 +78,6 @@ public final class WorkerNotify {
         } catch (Throwable t) {
             Log.w(TAG, "notifyStatus failed: " + t);
         }
-    }
-
-    /** Day key as YYYYDDD in Asia/Karachi timezone. */
-    public static int dayKey() {
-        return BackgroundCheckin.dayKey();
-    }
-
-    public static boolean isClaimedToday(Context context) {
-        SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, 0);
-        return prefs.getInt("claimed_day", 0) == dayKey();
-    }
-
-    public static void markClaimed(Context context) {
-        context.getSharedPreferences(PREFS_NAME, 0)
-            .edit().putInt("claimed_day", dayKey()).apply();
-    }
-
-    public static int bumpAttempt(Context context) {
-        SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, 0);
-        int day = dayKey();
-        int attDay = prefs.getInt("att_day", 0);
-        int n;
-        if (attDay != day) {
-            n = 1;
-            prefs.edit().putInt("att_day", day).putInt("att_n", 1).apply();
-        } else {
-            n = prefs.getInt("att_n", 0) + 1;
-            prefs.edit().putInt("att_n", n).apply();
-        }
-        return n;
     }
 
     public static void log(String msg) {
