@@ -6,8 +6,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Runtime half of the "Hide Shop and Lifestyle tabs" patch: drops tabs from the main screen's
- * bottom bar by identifier, before the bar composable reads the list.
+ * Runtime half of the "Hide Shop, Social+ and Lifestyle tabs" patch: drops tabs from the main
+ * screen's bottom bar by identifier, before the bar composable reads the list.
  *
  * <p>The bar is built from {@code List<TilesListItem>} and each item carries its own route
  * identifier, so filtering the list here is enough — no screen, route or navigation-graph entry is
@@ -15,14 +15,16 @@ import java.util.List;
  * notification) keeps working; it just no longer holds a slot in the bar.
  *
  * <p>Identifiers are the app's own route strings, read from the default bottom-bar builder, so they
- * are locale-independent:
+ * are locale-independent. Label to route, as built by the app (3.3.5 and 3.3.4.2 agree):
  * <ul>
- *   <li>{@code shop} — the Shop tab ({@code R.string.packages}, route from {@code M7.b})
+ *   <li>{@code shop} — the Shop tab ({@code R.string.packages})
+ *   <li>{@code myworld} — the Social+ tab ({@code R.string.my_world_title})
  *   <li>{@code explore} — the Lifestyle tab ({@code R.string.explore})
  * </ul>
- * Home ({@code dynamicdashboard}) and Account ({@code myaccount}) are never touched, and an unknown
- * identifier is always kept, so a future build that renames a route degrades to "nothing hidden"
- * rather than to an empty bar.
+ * Home ({@code dynamicdashboard}), Account ({@code myaccount}), the optional Faith tab
+ * ({@code islam2020}) and any other route are never touched, and an unknown identifier is always
+ * kept, so a future build that renames a route degrades to "nothing hidden" rather than to an
+ * empty bar.
  *
  * <p>The identifier getter is reached reflectively on purpose: these models are obfuscated per
  * build, and a missing getter must mean "keep the tab", not a crash on the main screen.
@@ -32,15 +34,15 @@ public final class HideTabs {
     /**
      * Route identifiers removed from the bottom bar.
      *
-     * <p>The bar is built in this fixed order: {@code dynamicdashboard} (Home), {@code shop},
-     * {@code explore}, {@code support}, {@code myaccount} (Account), then the optional
-     * {@code myworld} / {@code islam2020} entries. The reporter's screen shows five tabs —
-     * Home, Shop, Social+, Lifestyle, Account — i.e. exactly the three routes between Home and
-     * Account. Those three are listed here, so the bar keeps the two he asked to keep. This holds
-     * whichever of {@code explore} / {@code support} the app labels Social+ or Lifestyle, because
-     * both are dropped.
+     * <p>Route, not label: the reporter's bar reads Home, Shop, Social+, Lifestyle, Account, and
+     * the builder's own identifiers for those are {@code dynamicdashboard}, {@code shop},
+     * {@code myworld}, {@code explore}, {@code myaccount}. Exactly the three middle ones are
+     * hidden here. Do not infer these from position in the builder: {@code support} and
+     * {@code islam2020} are also built, conditionally, and neither is one of the three tabs asked
+     * for — {@code support} used to sit in this array and hid nothing on the reporter's build,
+     * which is how Social+ was left visible (issue #31).
      */
-    private static final String[] HIDDEN = {"shop", "explore", "support"};
+    private static final String[] HIDDEN = {"shop", "myworld", "explore"};
 
     private static final String IDENTIFIER_GETTER = "getIdentifier";
 
