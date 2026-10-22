@@ -45,14 +45,11 @@ public final class DailyCheckinWorker extends Worker {
         }
 
         // Terminal: either settled or gave up retrying
-        String checkin = BackgroundCheckin.getCheckin();
-        String milestone = MilestoneClaim.getResult();
         String ladder = claimStatus(context);
-        String next = "next ~00:05 PKT";
 
         WorkerNotify.notifyStatus(context,
             ladder,
-            checkin + " | milestone: " + milestone + " | " + next,
+            "next ~00:05 PKT",
             "Simosa daily check-in");
 
         // Chain tomorrow's midnight run (REPLACE: this run is done, schedule fresh)

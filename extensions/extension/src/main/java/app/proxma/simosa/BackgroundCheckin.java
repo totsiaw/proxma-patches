@@ -66,6 +66,7 @@ public final class BackgroundCheckin {
     public static boolean doCheckIn(Context context) {
         sSession = "none";
         sCheckin = "n/a";
+        MilestoneClaim.sResult = "n/a";
         try {
             return doCheckInInner(context);
         } catch (Throwable t) {
@@ -100,6 +101,7 @@ public final class BackgroundCheckin {
             sCheckin = skip;
             // Latched = already done today. Still try milestone (it has its own latch).
             String bearer = acquireBearer(context);
+            sCheckin = skip; // restore: acquireBearer may clobber via tryRefresh
             if (bearer != null) {
                 MilestoneClaim.tryClaimMilestone(context, bearer);
             }
@@ -117,7 +119,9 @@ public final class BackgroundCheckin {
 
         String bearer = acquireBearer(context);
         if (bearer == null) {
-            return true; // no token stored = needs app login, retrying won't help
+            if ("no token".equals(sCheckin)) return true; // permanent: needs app login
+            sCheckin = "refresh fail";
+            return false; // transient: network/server issue, retry
         }
         boolean fromCache = "cached".equals(sSession);
 
