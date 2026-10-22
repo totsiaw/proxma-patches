@@ -63,6 +63,15 @@ public final class MilestoneClaim {
         }
 
         HttpResult stateRes = httpGet(STATE_URL, bearer);
+        // Stale cached token → refresh once and retry
+        if (stateRes.code == 401 || stateRes.code == 419) {
+            log("MILESTONE_TOKEN_EXPIRED " + stateRes.code + " refreshing");
+            String fresh = BackgroundCheckin.refreshBearer(context);
+            if (fresh != null) {
+                bearer = fresh;
+                stateRes = httpGet(STATE_URL, fresh);
+            }
+        }
         if (stateRes.code < 200 || stateRes.code >= 300) {
             log("MILESTONE_STATE_FAIL " + stateRes.code);
             sResult = "state fail " + stateRes.code;

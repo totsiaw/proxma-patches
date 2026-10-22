@@ -200,6 +200,18 @@ public final class BackgroundCheckin {
         return bearer;
     }
 
+    /** Force a tier-2 refresh, bypassing the app cache. Used by MilestoneClaim on 419. */
+    static String refreshBearer(Context context) {
+        String account = AccountScope.id(context);
+        if (account == null) return null;
+        String bearer = tryRefresh(context, account);
+        if (bearer != null) {
+            sSession = "refreshed";
+            sLastBearer = bearer;
+        }
+        return bearer;
+    }
+
     /** Latch and report a 2xx check-in. Returns true when the run is finished. */
     private static boolean checkedIn(HttpResult result) {
         if (result.code < 200 || result.code >= 300) {
