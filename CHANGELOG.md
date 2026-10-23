@@ -1,3 +1,9 @@
+## [1.27.0](https://github.com/totsiaw/proxma-patches/compare/1.26.9...1.27.0) (2026-10-23)
+
+### New Features
+
+* **mytelenor:** auto-claim daily streak MBs and quiz rewards ([49ddd6c](https://github.com/totsiaw/proxma-patches/commit/49ddd6caca9f537cbe9f53195c65b341de86fea4))
+
 ## [1.26.8](https://github.com/totsiaw/proxma-patches/compare/1.26.7...1.26.8) (2026-10-22)
 
 ### Bug Fixes
