@@ -33,15 +33,47 @@ import org.w3c.dom.Element
  */
 private const val SUBSCRIPTION = "Lcom/adapty/models/AdaptyProfile\$Subscription;"
 
+/**
+ * The settings "NetMonster Premium" card does NOT read the premium boolean patched above. It renders
+ * from a nullable expiry DATE: non-null → "Active till <date>", null → the PURCHASE button. That date is
+ * derived from the Adapty subscription list, which is empty for anyone who never subscribed — so on a
+ * re-signed build of 5.0.x the card can never reach the "active" branch no matter what the boolean says.
+ * That is exactly what issue #32 reports (1.18.1, 5.0.1, both patches ticked, card still offers PURCHASE).
+ *
+ * Anchor: the composable that takes the expiry date as its first parameter and formats it for display
+ * (`OffsetDateTime.toInstant()` + `SimpleDateFormat.<init>`). Unique in 5.0.0 and 5.0.1, and needs no
+ * obfuscated name. Kept optional (see the execute block) so a build whose card shape differs — e.g. the
+ * 4.0.x line, where the card already behaved — is left exactly as it was.
+ */
+internal val premiumCardFingerprint = Fingerprint(
+    returnType = "V",
+    custom = { m, _ ->
+        m.parameterTypes.firstOrNull() == "Ljava/time/OffsetDateTime;" && run {
+            val refs = (m.implementation?.instructions ?: emptyList())
+                .mapNotNull { (it as? ReferenceInstruction)?.reference as? MethodReference }
+            refs.any { it.definingClass == "Ljava/time/OffsetDateTime;" && it.name == "toInstant" } &&
+                refs.any { it.definingClass == "Ljava/text/SimpleDateFormat;" && it.name == "<init>" }
+        }
+    },
+)
+
 internal val premiumEmitFingerprint = Fingerprint(
     returnType = "Ljava/lang/Object;",
-    // The FlowCollector that decides premium: the only emit() calling both Adapty subscription checks.
+    // The FlowCollector that decides premium: the only emit() calling both Adapty subscription checks
+    // AND boxing the computed flag exactly once. The "exactly once" half is load-bearing from 5.0.x on:
+    // those builds add a second emit() that also reads both Adapty checks (a ~6k-instruction state
+    // machine) but boxes the flag TWICE, so the two-Adapty-checks predicate alone is ambiguous and the
+    // patcher cannot pick a method. The premium collector boxes once.
     custom = { m, _ ->
         m.name == "emit" && run {
             val refs = (m.implementation?.instructions ?: emptyList())
                 .mapNotNull { (it as? ReferenceInstruction)?.reference as? MethodReference }
             refs.any { it.definingClass == SUBSCRIPTION && it.name == "isActive" } &&
-                refs.any { it.definingClass == SUBSCRIPTION && it.name == "isInGracePeriod" }
+                refs.any { it.definingClass == SUBSCRIPTION && it.name == "isInGracePeriod" } &&
+                refs.count {
+                    it.definingClass == "Ljava/lang/Boolean;" && it.name == "valueOf" &&
+                        it.parameterTypes.firstOrNull() == "Z"
+                } == 1
         }
     },
 )
@@ -58,11 +90,17 @@ internal val premiumEmitFingerprint = Fingerprint(
  * How to get one (free): Google Cloud Console → enable "Maps SDK for Android" → create an API key.
  * Either leave it unrestricted, or restrict it to application `cz.mroczis.netmonster` + the SHA-1 of the
  * keystore you sign the patched APK with. Then pass it at patch time:
- *   morphe-cli patch … -e "Unlock premium (NetMonster)" -O maps-api-key=AIza...
+ *   morphe-cli patch … -e "Google Maps API key (NetMonster)" -O maps-api-key=AIza...
+ *
+ * ⚠️ This MUST stay a named patch. While it was an unnamed private resourcePatch the option was only
+ * reachable from the CLI: `list-patches --with-options` showed options: [] for the premium patch and
+ * Manager had no field to type a key into, so map users had no fix at all (issue #32).
  */
-private val fixMapsApiKeyPatch = resourcePatch(
+@Suppress("unused")
+val netmonsterMapsKeyPatch = resourcePatch(
+    name = "Google Maps API key (NetMonster)",
     description = "Optional: write YOUR OWN Google Maps API key so the map renders after re-signing " +
-        "(NetMonster's built-in key is cert-locked). No key = map left as-is.",
+        "(NetMonster's built-in key is cert-locked). Leave the key empty to leave the map as-is.",
 ) {
     compatibleWith(COMPATIBILITY_NETMONSTER)
 
@@ -101,8 +139,8 @@ val unlockPremiumPatch = bytecodePatch(
         "the status shows Active without a subscription.",
 ) {
     compatibleWith(COMPATIBILITY_NETMONSTER)
-    // Optional map-key fix (no-op unless the user supplies -O maps-api-key=…).
-    dependsOn(fixMapsApiKeyPatch)
+    // Optional map-key fix (no-op unless the user supplies -O maps-api-key=… / fills the field in Manager).
+    dependsOn(netmonsterMapsKeyPatch)
 
     execute {
         // (1) emit-force: whenever the Adapty collector runs, force the computed premium flag true.
@@ -124,18 +162,33 @@ val unlockPremiumPatch = bytecodePatch(
         //   - the MutableStateFlow type = the class of emit's compareAndSet ((Object,Object)Z) call,
         //   - the premium field = the field read in emit whose type is that MSF (its class = the repo),
         //   - setValue = that MSF class's instance (Object)V method (the StateFlow value setter).
-        val msfType = emitInsns
+        val emitRefs = emitInsns
             .mapNotNull { (it as? ReferenceInstruction)?.reference as? MethodReference }
-            .first { it.returnType == "Z" && it.parameterTypes.size == 2 && it.parameterTypes.all { p -> p == "Ljava/lang/Object;" } }
-            .definingClass
+        // The StateFlow the collector publishes into. Two shapes exist across versions:
+        //   4.0.x — emit updates it through compareAndSet(Object,Object)Z;
+        //   5.0.x — emit calls the value setter (Object)V directly (no compareAndSet in emit at all).
+        // Either one names the StateFlow type, so try the 4.0.x shape first and fall back to 5.0.x.
+        val msfType = emitRefs.firstOrNull {
+            it.returnType == "Z" && it.parameterTypes.size == 2 &&
+                it.parameterTypes.all { p -> p == "Ljava/lang/Object;" }
+        }?.definingClass
+            ?: emitRefs.firstOrNull {
+                it.returnType == "V" && it.parameterTypes.size == 1 &&
+                    it.parameterTypes[0] == "Ljava/lang/Object;"
+            }?.definingClass
+            ?: error("NetMonster: could not derive the premium StateFlow type from emit()")
         val premiumField = emitInsns
             .mapNotNull { (it as? ReferenceInstruction)?.reference as? FieldReference }
             .first { it.type == msfType }
         val repoType = premiumField.definingClass
-        val setValue = mutableClassDefBy(msfType).methods.first {
+        // Prefer the setter emit itself calls (name can drift); else look it up on the StateFlow type.
+        val setValue = emitRefs.firstOrNull {
+            it.definingClass == msfType && it.returnType == "V" &&
+                it.parameterTypes.size == 1 && it.parameterTypes[0] == "Ljava/lang/Object;"
+        }?.name ?: mutableClassDefBy(msfType).methods.first {
             it.name != "<init>" && it.parameterTypes.size == 1 &&
                 it.parameterTypes[0] == "Ljava/lang/Object;" && it.returnType == "V"
-        }
+        }.name
 
         // The repo constructor (the one that wires Adapty's profile listener).
         val repo = mutableClassDefBy(repoType)
@@ -169,10 +222,37 @@ val unlockPremiumPatch = bytecodePatch(
             """
                 iget-object v0, p0, $repoType->${premiumField.name}:$msfType
                 sget-object v1, Ljava/lang/Boolean;->TRUE:Ljava/lang/Boolean;
-                invoke-virtual {v0, v1}, $msfType->${setValue.name}(Ljava/lang/Object;)V
+                invoke-virtual {v0, v1}, $msfType->$setValue(Ljava/lang/Object;)V
             """.trimIndent(),
         )
         // The flavor-flag flip itself (flagIdx is unaffected by the return-site insertion above).
         ctor.addInstructions(flagIdx + 1, "const/4 v$flagReg, 0x1")
+
+        // (4) THE PREMIUM CARD: force a future expiry date so the settings card renders as owned.
+        // The card branches on this date being null (null → PURCHASE button, non-null → "Active till …"),
+        // and the date is computed from the Adapty subscription list, which stays empty on a build that
+        // never had a subscription. Injecting the date at the card composable's entry is enough and is
+        // independent of anything Adapty delivers later. Optional by design: if the shape does not match
+        // exactly one method (e.g. a future release, or the 4.0.x card), the patch leaves it untouched
+        // rather than failing the whole run.
+        val card = runCatching { premiumCardFingerprint.methodOrNull }.getOrNull()
+        if (card != null) {
+            // Need three contiguous scratch registers for the long argument, and p0 must be writable.
+            val scratch = (card.implementation?.registerCount ?: 0) - card.parameterTypes.size
+            card.addInstructions(
+                0,
+                if (scratch >= 3) """
+                    invoke-static {}, Ljava/time/OffsetDateTime;->now()Ljava/time/OffsetDateTime;
+                    move-result-object v0
+                    const-wide/16 v1, 0x64
+                    invoke-virtual/range {v0 .. v2}, Ljava/time/OffsetDateTime;->plusYears(J)Ljava/time/OffsetDateTime;
+                    move-result-object v0
+                    move-object/from16 p0, v0
+                """.trimIndent() else """
+                    invoke-static {}, Ljava/time/OffsetDateTime;->now()Ljava/time/OffsetDateTime;
+                    move-result-object p0
+                """.trimIndent(),
+            )
+        }
     }
 }
