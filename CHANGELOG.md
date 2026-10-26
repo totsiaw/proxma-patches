@@ -1,3 +1,9 @@
+## [1.27.3](https://github.com/totsiaw/proxma-patches/compare/1.27.2...1.27.3) (2026-10-26)
+
+### Bug Fixes
+
+* **mytelenor:** auto-play Answer & Win and claim its MBs; harden the daily claims ([05aa0d0](https://github.com/totsiaw/proxma-patches/commit/05aa0d0731e7fd4a39616b8dd682246851a4ed6b))
+
 ## [1.27.2](https://github.com/totsiaw/proxma-patches/compare/1.27.1...1.27.2) (2026-10-26)
 
 ### Bug Fixes
