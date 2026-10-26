@@ -68,15 +68,16 @@ public final class StreakClaim {
         Log.i(TAG, "STREAK_CLAIM_START");
         HttpResult claimResult = httpPost(context, claimUrl, body, msisdn);
 
-        if (claimResult.code >= 200 && claimResult.code < 300) {
+        if (succeeded(claimResult)) {
             AutoClaim.latch(context, "streak");
             Log.i(TAG, "STREAK_CLAIMED " + claimResult.code + " " + truncate(claimResult.body));
             sResult = "claimed";
             return true;
         }
 
-        if (claimResult.code == 409 || claimResult.code == 400) {
-            String bodyLower = claimResult.body != null ? claimResult.body.toLowerCase() : "";
+        int status = bodyStatus(claimResult);
+        if (status == 409 || status == 400 || claimResult.code == 409 || claimResult.code == 400) {
+            String bodyLower = bodyLower(claimResult);
             if (bodyLower.contains("already") || bodyLower.contains("claimed")
                 || bodyLower.contains("not eligible") || bodyLower.contains("not available")) {
                 AutoClaim.latch(context, "streak");
@@ -277,11 +278,11 @@ public final class StreakClaim {
             customerCode = sp.getString("nh_cc", "");
         }
 
-        setIfNonEmpty(conn, "X-user-price-plan", pricePlan);
-        setIfNonEmpty(conn, "X-user-segment", segment);
-        setIfNonEmpty(conn, "x-user-segment-type", segType);
-        setIfNonEmpty(conn, "x-user-package-plan", pkgPlan);
-        setIfNonEmpty(conn, "x-user-plan-type", planType);
+        setAlways(conn, "X-user-price-plan", pricePlan);
+        setAlways(conn, "X-user-segment", segment);
+        setAlways(conn, "x-user-segment-type", segType);
+        setAlways(conn, "x-user-package-plan", pkgPlan);
+        setAlways(conn, "x-user-plan-type", planType);
 
         // 3. Device info
         conn.setRequestProperty("X-device-make", Build.MANUFACTURER);
@@ -357,6 +358,29 @@ public final class StreakClaim {
         } catch (Throwable t) {
             Log.i(TAG, "SIG_ERR " + t.getClass().getSimpleName() + " " + t.getMessage());
         }
+    }
+
+    // The app's interceptor adds these even when empty; the quiz API rejects a request missing them.
+    private static void setAlways(HttpURLConnection conn, String header, String value) {
+        conn.setRequestProperty(header, value == null ? "" : value);
+    }
+
+    /** The gateway wraps failures in HTTP 200; the real status is the body's statusCode. */
+    static int bodyStatus(HttpResult r) {
+        try {
+            String code = new org.json.JSONObject(r.body).optString("statusCode", "");
+            if (!code.isEmpty()) return Integer.parseInt(code.trim());
+        } catch (Throwable ignored) {}
+        return r.code;
+    }
+
+    static boolean succeeded(HttpResult r) {
+        int body = bodyStatus(r);
+        return r.code >= 200 && r.code < 300 && body >= 200 && body < 300;
+    }
+
+    static String bodyLower(HttpResult r) {
+        return r.body != null ? r.body.toLowerCase() : "";
     }
 
     private static void setIfNonEmpty(HttpURLConnection conn, String header, String value) {

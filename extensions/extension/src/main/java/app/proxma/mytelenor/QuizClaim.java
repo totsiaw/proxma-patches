@@ -50,7 +50,7 @@ public final class QuizClaim {
         StreakClaim.HttpResult claimResult = StreakClaim.httpPost(context, claimUrl, claimBody, msisdn);
         Log.i(TAG, "QUIZ_CLAIM " + claimResult.code + " " + truncate(claimResult.body));
 
-        if (claimResult.code >= 200 && claimResult.code < 300) {
+        if (StreakClaim.succeeded(claimResult)) {
             AutoClaim.latch(context, "quiz");
             sResult = "claimed";
             try {
@@ -67,8 +67,9 @@ public final class QuizClaim {
             return true;
         }
 
-        if (claimResult.code == 400 || claimResult.code == 409 || claimResult.code == 404) {
-            String bodyLower = claimResult.body != null ? claimResult.body.toLowerCase() : "";
+        int status = StreakClaim.bodyStatus(claimResult);
+        if (status == 400 || status == 409 || status == 404) {
+            String bodyLower = StreakClaim.bodyLower(claimResult);
             if (bodyLower.contains("already") || bodyLower.contains("claimed")
                 || bodyLower.contains("no pending") || bodyLower.contains("not found")) {
                 AutoClaim.latch(context, "quiz");
