@@ -24,7 +24,8 @@ import java.net.URL;
  *   <li>POST to Jazz MSA gateway gamification/claimCheckIn with reward params
  * </ol>
  *
-  * <p>The MSA gateway is authenticated with the Simosa bearer token.
+ * <p>The MSA gateway needs only {@code Content-Type: application/json} and
+ * {@code User-Agent: Android} — no bearer token.
  */
 public final class MilestoneClaim {
 
@@ -151,10 +152,10 @@ public final class MilestoneClaim {
             int rValidity = reward.optInt("validity_days", 1);
 
             if (rType.contains("mins") || rType.contains("on_net_minutes")) {
-                claimMints = String.valueOf((long) rValue);
+                claimMints = String.valueOf(rValue);
                 mintExpiry = String.valueOf(rValidity);
             } else if (rType.contains("mb") || rType.contains("gb")) {
-                claimData = String.valueOf((long) rValue);
+                claimData = String.valueOf(rValue);
                 type = rType;
                 dataExpiry = String.valueOf(rValidity);
             }
@@ -170,7 +171,7 @@ public final class MilestoneClaim {
         claimBody.put("dataExpiry", dataExpiry);
         claimBody.put("mintExpiry", mintExpiry);
 
-        HttpResult claimRes = httpPostMsa(CLAIM_URL, claimBody.toString(), bearer);
+        HttpResult claimRes = httpPostMsa(CLAIM_URL, claimBody.toString());
 
         if (claimRes.code >= 200 && claimRes.code < 300) {
             log("MILESTONE_CLAIMED level=" + currentLevel + " " + truncate(claimRes.body));
@@ -207,13 +208,12 @@ public final class MilestoneClaim {
         }
     }
 
-    private static HttpResult httpPostMsa(String urlStr, String body, String bearer) throws Exception {
+    private static HttpResult httpPostMsa(String urlStr, String body) throws Exception {
         HttpURLConnection conn = (HttpURLConnection) new URL(urlStr).openConnection();
         try {
             conn.setRequestMethod("POST");
             conn.setRequestProperty("Content-Type", "application/json");
             conn.setRequestProperty("User-Agent", "Android");
-            if (bearer != null) conn.setRequestProperty("Authorization", bearer);
             conn.setConnectTimeout(TIMEOUT_MS);
             conn.setReadTimeout(TIMEOUT_MS);
             conn.setDoOutput(true);
