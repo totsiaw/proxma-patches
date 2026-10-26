@@ -18,6 +18,14 @@ public final class StreakClaim {
     private static final String TAG = "PROXMA_MT";
     private static final String PREFS = "proxma_mytelenor";
     private static final int TIMEOUT_MS = 15000;
+    // Generous: a read timeout after the server already acted is the worst case (reward
+    // processed, response lost), and slow networks hit it at 15 s.
+    private static final int READ_TIMEOUT_MS = 30000;
+    private static final long[] NET_RETRY_DELAYS_MS = {3_000L, 8_000L};
+
+    // Opening the app refreshes the session and queues a run, so these need no retry.
+    static final String NOT_LOGGED_IN = "not logged in, open the app";
+    static final String LOGIN_EXPIRED = "login expired, open the app";
 
     static String sResult = "n/a";
 
@@ -50,11 +58,22 @@ public final class StreakClaim {
             sResult = "no msisdn";
             return true;
         }
+        if (!loggedIn(context)) {
+            Log.i(TAG, "STREAK_SKIP no-token");
+            sResult = NOT_LOGGED_IN;
+            return true;
+        }
 
         // Step 1: Get streak info
         String streakInfoUrl = resolveUrl("getDailyRewardList", "api/streak/info/" + msisdn + "/v2", msisdn);
         Log.i(TAG, "STREAK_INFO_START url=" + truncate(streakInfoUrl));
-        HttpResult infoResult = httpGet(context, streakInfoUrl, msisdn);
+        HttpResult infoResult = withNetRetry("streak-info", () -> httpGet(context, streakInfoUrl, msisdn));
+        if (authFailed(infoResult)) {
+            Log.i(TAG, "STREAK_AUTH " + infoResult.code + " " + truncate(infoResult.body));
+            sResult = LOGIN_EXPIRED;
+            return true;
+        }
+        // A body-level error here doesn't stop us: the claim response is authoritative.
         if (infoResult.code < 200 || infoResult.code >= 300) {
             Log.i(TAG, "STREAK_INFO_FAIL " + infoResult.code + " " + truncate(infoResult.body));
             sResult = "info fail " + infoResult.code;
@@ -66,12 +85,17 @@ public final class StreakClaim {
         String claimUrl = resolveUrl("getClaimStreak", "api/streak/claim");
         String body = "{\"msisdn\":\"" + msisdn + "\"}";
         Log.i(TAG, "STREAK_CLAIM_START");
-        HttpResult claimResult = httpPost(context, claimUrl, body, msisdn);
+        HttpResult claimResult = withNetRetry("streak-claim", () -> httpPost(context, claimUrl, body, msisdn));
 
         if (succeeded(claimResult)) {
             AutoClaim.latch(context, "streak");
             Log.i(TAG, "STREAK_CLAIMED " + claimResult.code + " " + truncate(claimResult.body));
             sResult = "claimed";
+            return true;
+        }
+        if (authFailed(claimResult)) {
+            Log.i(TAG, "STREAK_AUTH " + claimResult.code + " " + truncate(claimResult.body));
+            sResult = LOGIN_EXPIRED;
             return true;
         }
 
@@ -172,10 +196,30 @@ public final class StreakClaim {
             conn.setRequestMethod("GET");
             addHeaders(conn, context, null, msisdn);
             conn.setConnectTimeout(TIMEOUT_MS);
-            conn.setReadTimeout(TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
             return readResponse(conn);
         } finally {
             conn.disconnect();
+        }
+    }
+
+    interface Request {
+        HttpResult send() throws Exception;
+    }
+
+    /**
+     * Retries connection-level failures (reset, timeout, DNS) a couple of times within the run.
+     * Callers must tolerate a duplicate: the failed attempt may have reached the server.
+     */
+    static HttpResult withNetRetry(String what, Request request) throws Exception {
+        for (int i = 0; ; i++) {
+            try {
+                return request.send();
+            } catch (java.io.IOException e) {
+                Log.i(TAG, "NET_ERR " + what + " try=" + i + " " + e.getClass().getSimpleName());
+                if (i >= NET_RETRY_DELAYS_MS.length) throw e;
+                Thread.sleep(NET_RETRY_DELAYS_MS[i]);
+            }
         }
     }
 
@@ -185,7 +229,7 @@ public final class StreakClaim {
             conn.setRequestMethod("POST");
             addHeaders(conn, context, body, msisdn);
             conn.setConnectTimeout(TIMEOUT_MS);
-            conn.setReadTimeout(TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
             conn.setDoOutput(true);
             OutputStream out = conn.getOutputStream();
             out.write(body.getBytes("UTF-8"));
@@ -211,7 +255,22 @@ public final class StreakClaim {
         return new HttpResult(code, text.toString());
     }
 
-    private static void addHeaders(HttpURLConnection conn, Context context, String body, String msisdn) {
+    /** {make, model} from the app's own header builder (g50.b.b() → getters c/d), or null. */
+    private static String[] appDevice(Context context) {
+        try {
+            Class<?> cls = Class.forName("g50.b");
+            Object builder = cls.getConstructor(Context.class).newInstance(context);
+            Object holder = cls.getMethod("b").invoke(builder);
+            String make = invoke(holder, "c");
+            String model = invoke(holder, "d");
+            if (make != null && model != null) return new String[] {make, model};
+        } catch (Throwable t) {
+            Log.i(TAG, "HDR_DEVICE_ERR " + t.getClass().getSimpleName());
+        }
+        return null;
+    }
+
+    static void addHeaders(HttpURLConnection conn, Context context, String body, String msisdn) {
         // 1. Static headers — mirrors m79993f()
         conn.setRequestProperty("Content-Type", "application/json");
         conn.setRequestProperty("Accept", "application/json");
@@ -239,13 +298,14 @@ public final class StreakClaim {
                 // Verified mapping (smali field → getter → interceptor usage):
                 // g() → field a → pricePlan (X-user-price-plan)
                 // h() → field b → segment (X-user-segment)
-                // j() → field l → segmentType (x-user-segment-type)
+                // i() → field l → segmentType (x-user-segment-type; 4.2.63 has no j(), and the
+                //        quiz endpoints reject an empty value with 412)
                 // e() → field m → packagePlan (x-user-package-plan + signature 3rd arg)
                 // f() → field n → planType (x-user-plan-type)
                 // b() → field o → customerCode (signature 2nd arg)
                 String pp = invoke(nh, "g");
                 String seg = invoke(nh, "h");
-                String st = invoke(nh, "j");
+                String st = invoke(nh, "i");
                 String pkp = invoke(nh, "e");
                 String pt = invoke(nh, "f");
                 String cc = invoke(nh, "b");
@@ -284,9 +344,10 @@ public final class StreakClaim {
         setAlways(conn, "x-user-package-plan", pkgPlan);
         setAlways(conn, "x-user-plan-type", planType);
 
-        // 3. Device info
-        conn.setRequestProperty("X-device-make", Build.MANUFACTURER);
-        conn.setRequestProperty("X-device-model", Build.MODEL);
+        // 3. Device info, normalized the way the app's interceptor (g50.b) does it
+        String[] device = appDevice(context);
+        conn.setRequestProperty("X-device-make", device != null ? device[0] : Build.MANUFACTURER);
+        conn.setRequestProperty("X-device-model", device != null ? device[1] : Build.MODEL);
 
         try {
             Class<?> p0Class = Class.forName("com.telenor.pakistan.mytelenor.Utils.p0");
@@ -377,6 +438,23 @@ public final class StreakClaim {
     static boolean succeeded(HttpResult r) {
         int body = bodyStatus(r);
         return r.code >= 200 && r.code < 300 && body >= 200 && body < 300;
+    }
+
+    static boolean authFailed(HttpResult r) {
+        int body = bodyStatus(r);
+        return r.code == 401 || r.code == 403 || body == 401 || body == 403;
+    }
+
+    /** Without a xenon token (live or cached from a warm run) every call fails. */
+    static boolean loggedIn(Context context) {
+        try {
+            Class<?> vClass = Class.forName("com.telenor.pakistan.mytelenor.Utils.v");
+            String live = (String) vClass.getMethod("i").invoke(null);
+            if (live == null || live.isEmpty()) live = (String) vClass.getMethod("h").invoke(null);
+            if (live != null && !live.isEmpty()) return true;
+        } catch (Throwable ignored) {}
+        SharedPreferences sp = context.getSharedPreferences(PREFS, 0);
+        return !sp.getString("xenon_v2", "").isEmpty() || !sp.getString("xenon", "").isEmpty();
     }
 
     static String bodyLower(HttpResult r) {
