@@ -1,3 +1,11 @@
+## [1.27.1](https://github.com/totsiaw/proxma-patches/compare/1.27.0...1.27.1) (2026-10-26)
+
+### Bug Fixes
+
+* **mytelenor:** rewrite StreakClaim to mirror real interceptor headers + signature ([cb040b0](https://github.com/totsiaw/proxma-patches/commit/cb040b00fabc2165048e86a98b08aee916a02d51))
+* **mytelenor:** schedule auto-claim with JobScheduler; app R8-renames WorkManager ([dd0b185](https://github.com/totsiaw/proxma-patches/commit/dd0b185d8e300ab815fca07264ae117c83b6fdac))
+* **simosa:** revert milestone claim changes ([b1e0cde](https://github.com/totsiaw/proxma-patches/commit/b1e0cde0647b1a4713491598b4c35e1846137a4b))
+
 ## [1.27.0](https://github.com/totsiaw/proxma-patches/compare/1.26.9...1.27.0) (2026-10-23)
 
 ### New Features
