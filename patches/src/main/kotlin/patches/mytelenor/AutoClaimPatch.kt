@@ -59,8 +59,10 @@ private val claimJobServiceManifestPatch = resourcePatch {
 @Suppress("unused")
 val autoClaimPatch = bytecodePatch(
     name = "Auto-claim daily rewards",
-    description = "Claims daily streak MBs and Answer & Win quiz rewards automatically " +
-        "via background JobScheduler jobs scheduled from MainActivity.",
+    description = "Claims the daily streak MBs and plays the Answer & Win quiz automatically, using the answer key " +
+        "the app already receives, then claims the quiz MBs. Runs at about 00:05 PKT, a few seconds after the " +
+        "app is opened, and every 6 hours, retrying failures until late evening. A notification shows each " +
+        "result. Swiping the app away from recents force-stops it and cancels the schedule until it is opened again.",
 ) {
     compatibleWith(COMPATIBILITY_MYTELENOR)
     extendWith("extensions/extension.mpe")
