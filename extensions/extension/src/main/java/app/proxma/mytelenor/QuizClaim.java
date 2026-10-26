@@ -4,6 +4,7 @@ import android.content.Context;
 import android.util.Log;
 
 import org.json.JSONObject;
+
 public final class QuizClaim {
 
     private static final String TAG = "PROXMA_MT";
@@ -33,18 +34,20 @@ public final class QuizClaim {
             return true;
         }
 
-        String msisdn = AccountScope.msisdn(context);
+        String msisdn = StreakClaim.resolveMsisdn(context);
         if (msisdn == null || msisdn.isEmpty()) {
             sResult = "no msisdn";
             return true;
         }
 
-        // Try to claim any pending quiz reward (user may have answered in the app UI
-        // but didn't tap "claim"). This is safe — claim only works if user already answered correctly.
+        // SubmitQuestionBO has a (String msisdn, boolean markPlayed) ctor.
+        // We can only claim a PENDING reward (user answered questions in-app).
+        // We cannot answer quiz questions — we don't have the question/answer state.
         String claimUrl = StreakClaim.resolveUrl("getClaimAnswerAndWin",
             "api/qplayandwin/questions/answer/v3/claim/");
+        String claimBody = "{\"msisdn\":\"" + msisdn + "\",\"markPlayed\":true}";
         Log.i(TAG, "QUIZ_CLAIM_ATTEMPT");
-        StreakClaim.HttpResult claimResult = StreakClaim.httpPost(context, claimUrl, "{}", msisdn);
+        StreakClaim.HttpResult claimResult = StreakClaim.httpPost(context, claimUrl, claimBody, msisdn);
         Log.i(TAG, "QUIZ_CLAIM " + claimResult.code + " " + truncate(claimResult.body));
 
         if (claimResult.code >= 200 && claimResult.code < 300) {
@@ -64,7 +67,6 @@ public final class QuizClaim {
             return true;
         }
 
-        // 4xx = no pending reward (user hasn't answered, or already claimed)
         if (claimResult.code == 400 || claimResult.code == 409 || claimResult.code == 404) {
             String bodyLower = claimResult.body != null ? claimResult.body.toLowerCase() : "";
             if (bodyLower.contains("already") || bodyLower.contains("claimed")
@@ -73,18 +75,17 @@ public final class QuizClaim {
                 sResult = "no pending reward";
                 return true;
             }
-            // User hasn't answered yet — don't burn the attempt
             sResult = "not answered yet";
             return true;
         }
 
-        // Server error — retry later
-        sResult = "claim fail " + claimResult.code;
+        Log.i(TAG, "QUIZ_FAIL " + claimResult.code + " " + truncate(claimResult.body));
+        sResult = "fail " + claimResult.code;
         return false;
     }
 
-    private static String truncate(String value) {
-        if (value == null) return "";
-        return value.length() > 200 ? value.substring(0, 200) : value;
+    private static String truncate(String s) {
+        if (s == null) return "";
+        return s.length() > 200 ? s.substring(0, 200) : s;
     }
 }
