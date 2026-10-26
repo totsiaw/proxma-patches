@@ -299,7 +299,71 @@ public final class QuizClaim {
 
     private static StreakClaim.HttpResult post(Context context, String what, String url, String body,
             String msisdn) throws Exception {
-        return StreakClaim.withNetRetry(what, () -> StreakClaim.httpPost(context, url, body, msisdn));
+        return StreakClaim.withNetRetry(what, () -> {
+            StreakClaim.HttpResult r = appPost(url, new JSONObject(body));
+            return r != null ? r : StreakClaim.httpPost(context, url, body, msisdn);
+        });
+    }
+
+    /**
+     * Sends the POST through the app's own Retrofit client, so its interceptors add the headers and
+     * signature exactly as for a manual play. Returns null when the app's classes can't be reached.
+     */
+    private static StreakClaim.HttpResult appPost(String url, JSONObject body) throws Exception {
+        Object api;
+        Class<?> apiClass;
+        Class<?> boClass;
+        java.lang.reflect.Constructor<?> answerCtor;
+        try {
+            Class<?> appClass = Class.forName("com.telenor.pakistan.mytelenor.BaseApp.DaggerApplication");
+            api = appClass.getMethod("h").invoke(appClass.getMethod("d").invoke(null));
+            apiClass = Class.forName("com.telenor.pakistan.mytelenor.Interface.MyEndPointsInterface");
+            boClass = Class.forName("com.telenor.pakistan.mytelenor.AnswerAndWin.models.SubmitQuestionBO");
+            answerCtor = Class.forName("com.telenor.pakistan.mytelenor.AnswerAndWin.models.SubmitQuestionAnswerNWin")
+                .getConstructor(int.class, int.class);
+            if (api == null) throw new IllegalStateException("no api");
+        } catch (Throwable t) {
+            Log.i(TAG, "QUIZ_APP_CLIENT_UNAVAILABLE " + t);
+            return null;
+        }
+
+        String msisdn = body.getString("msisdn");
+        Object bo;
+        JSONArray answers = body.optJSONArray("answers");
+        if (answers == null) {
+            bo = boClass.getConstructor(String.class, boolean.class).newInstance(msisdn, body.getBoolean("markPlayed"));
+        } else {
+            java.util.List<Object> list = new java.util.ArrayList<>();
+            for (int i = 0; i < answers.length(); i++) {
+                JSONObject a = answers.getJSONObject(i);
+                list.add(answerCtor.newInstance(a.getInt("questionID"), a.getInt("choiceID")));
+            }
+            bo = boClass.getConstructor(java.util.List.class, String.class).newInstance(list, msisdn);
+        }
+
+        // The submit method's @Url is dynamic, so it serves the claim URL too; only statusCode,
+        // message and data are read from the reply.
+        try {
+            Object call = apiClass.getMethod("submitQuestionAnswerNWin", String.class, boClass).invoke(api, url, bo);
+            Object resp = Class.forName("retrofit2.Call").getMethod("execute").invoke(call);
+            Class<?> respClass = Class.forName("retrofit2.Response");
+            int code = (Integer) respClass.getMethod("code").invoke(resp);
+            Object parsed = respClass.getMethod("body").invoke(resp);
+            String text;
+            if (parsed != null) {
+                Class<?> gson = Class.forName("com.google.gson.Gson");
+                text = (String) gson.getMethod("toJson", Object.class).invoke(gson.newInstance(), parsed);
+            } else {
+                Object err = respClass.getMethod("errorBody").invoke(resp);
+                text = err != null ? (String) err.getClass().getMethod("string").invoke(err) : "";
+            }
+            Log.i(TAG, "QUIZ_APP_CLIENT " + code);
+            return new StreakClaim.HttpResult(code, text);
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof java.io.IOException) throw (java.io.IOException) cause;
+            throw e;
+        }
     }
 
     /** A real 5-question play took ~36 s from mark to submit; mirror a human pace. */
