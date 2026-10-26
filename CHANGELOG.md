@@ -1,3 +1,9 @@
+## [1.27.2](https://github.com/totsiaw/proxma-patches/compare/1.27.1...1.27.2) (2026-10-26)
+
+### Bug Fixes
+
+* **simosa:** claim milestone levels through the app's signed claimCheckIn ([d425f82](https://github.com/totsiaw/proxma-patches/commit/d425f82763d60f1e429c201ae848899c7853ce66))
+
 ## [1.27.1](https://github.com/totsiaw/proxma-patches/compare/1.27.0...1.27.1) (2026-10-26)
 
 ### Bug Fixes
