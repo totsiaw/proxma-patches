@@ -39,8 +39,15 @@ public final class QuizClaim {
     public static String getResult() { return sResult; }
 
     /** Returns false when the run should be retried later. */
+    /** Off until a live auto-play has been verified end to end; marking the quiz uses up the day. */
+    static final boolean ENABLED = false;
+
     public static boolean tryClaimQuiz(Context context) {
         sResult = "n/a";
+        if (!ENABLED) {
+            sResult = "latched (auto-play off, play in app)";
+            return true;
+        }
         try {
             return quizInner(context);
         } catch (java.io.IOException e) {
