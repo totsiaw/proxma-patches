@@ -68,10 +68,11 @@ public final class DailyCheckinWorker extends Worker {
         if ((!settled || !ladderSettled) && getRunAttemptCount() < MAX_RETRIES) {
             Log.i(TAG, "WORKER_RETRY attempt=" + getRunAttemptCount()
                 + " checkin=" + settled + " ladder=" + ladderSettled);
-            if (MilestoneClaim.hasNews()) {
-                WorkerNotify.notifyStatus(context, "Ladder: " + LadderClaim.getResult(), "retrying",
-                    "Simosa daily check-in");
-            }
+            // Always post on retry: ColorOS hides this app's logcat, so the notification is the
+            // only place a failed run's reason (Checkin:/Ladder: lines) can be read afterwards.
+            WorkerNotify.notifyStatus(context, "Ladder: " + LadderClaim.getResult(),
+                "retry " + (getRunAttemptCount() + 1) + "/" + MAX_RETRIES,
+                "Simosa daily check-in");
             return Result.retry();
         }
 
