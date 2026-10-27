@@ -1,11 +1,17 @@
 package app.proxma.simosa;
 
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.content.Context;
+import android.content.pm.ServiceInfo;
+import android.os.Build;
 import android.util.Log;
 
 import androidx.work.BackoffPolicy;
 import androidx.work.Constraints;
 import androidx.work.ExistingWorkPolicy;
+import androidx.work.ForegroundInfo;
 import androidx.work.NetworkType;
 import androidx.work.OneTimeWorkRequest;
 import androidx.work.WorkManager;
@@ -22,6 +28,8 @@ public final class DailyCheckinWorker extends Worker {
     private static final String WORK_IMMEDIATE = "proxma_simosa_now";
     private static final String WORK_MIDNIGHT = "proxma_simosa_midnight";
     private static final int MAX_RETRIES = 6;
+    private static final String FGS_CHANNEL_ID = "proxma_fgs";
+    private static final int FGS_NOTIF_ID = 1004;
 
     public DailyCheckinWorker(Context context, WorkerParameters parameters) {
         super(context, parameters);
@@ -30,6 +38,7 @@ public final class DailyCheckinWorker extends Worker {
     @Override
     public Result doWork() {
         Context context = getApplicationContext();
+        goForeground(context);
 
         // Both daily claims already done: only milestones can still be due (they have their own
         // per-level state). Notify only when that check did something, never for a bare no-op.
@@ -85,6 +94,40 @@ public final class DailyCheckinWorker extends Worker {
         // Chain tomorrow's midnight run (REPLACE: this run is done, schedule fresh)
         scheduleMidnight(context, ExistingWorkPolicy.REPLACE);
         return Result.success();
+    }
+
+    /**
+     * Run the claim inside a short dataSync foreground service. ColorOS stops a plain background
+     * job a few seconds in, so a multi-request run (check-in, ladder, milestone) is cut mid-flow
+     * and only finishes on a later retry. Starting from the background needs an exemption (the
+     * app's battery set to "Allow background activity"); a refused start throws here or inside
+     * WorkManager's SystemForegroundService, which catches it, and the run continues as before.
+     */
+    private void goForeground(Context context) {
+        try {
+            NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm == null || Build.VERSION.SDK_INT < 29) {
+                return;
+            }
+            int icon = context.getApplicationInfo().icon;
+            if (icon == 0) {
+                return;
+            }
+            NotificationChannel channel = new NotificationChannel(FGS_CHANNEL_ID, "Background claims",
+                NotificationManager.IMPORTANCE_LOW);
+            channel.setDescription("Shown while the daily check-in runs");
+            nm.createNotificationChannel(channel);
+            Notification notification = new Notification.Builder(context, FGS_CHANNEL_ID)
+                .setSmallIcon(icon)
+                .setContentTitle("Claiming daily rewards\u2026")
+                .setOngoing(true)
+                .build();
+            setForegroundAsync(new ForegroundInfo(FGS_NOTIF_ID, notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)).get(10, TimeUnit.SECONDS);
+            Log.i(TAG, "WORKER_FGS started");
+        } catch (Throwable t) {
+            Log.w(TAG, "WORKER_FGS_REFUSED " + t);
+        }
     }
 
     /** Called from the patched {@code MainActivity.onCreate}; safe to call on every launch. */

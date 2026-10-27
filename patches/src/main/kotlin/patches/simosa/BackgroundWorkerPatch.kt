@@ -5,10 +5,12 @@ import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.extensions.InstructionExtensions.instructions
 import app.morphe.patcher.patch.PatchException
 import app.morphe.patcher.patch.bytecodePatch
+import app.morphe.patcher.patch.resourcePatch
 import com.android.tools.smali.dexlib2.AccessFlags
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
+import org.w3c.dom.Element
 
 /*
  * Background daily check-in.
@@ -46,6 +48,51 @@ internal val mainActivityOnCreateFingerprint = Fingerprint(
     },
 )
 
+private const val SYSTEM_FOREGROUND_SERVICE = "androidx.work.impl.foreground.SystemForegroundService"
+
+/*
+ * DailyCheckinWorker runs as a dataSync foreground service (WorkManager's setForegroundAsync), since
+ * ColorOS kills a plain background job mid-run. Simosa declares WorkManager's SystemForegroundService
+ * without a foregroundServiceType, and at targetSdk 34+ startForeground with a type the manifest does
+ * not declare is refused, so declare dataSync on it (merged with any type already set). Simosa
+ * already holds FOREGROUND_SERVICE and FOREGROUND_SERVICE_DATA_SYNC; they are added only if missing.
+ */
+private val foregroundServiceManifestPatch = resourcePatch {
+    finalize {
+        document("AndroidManifest.xml").use { doc ->
+            val manifest = doc.documentElement
+            val permissions = doc.getElementsByTagName("uses-permission")
+            listOf(
+                "android.permission.FOREGROUND_SERVICE",
+                "android.permission.FOREGROUND_SERVICE_DATA_SYNC",
+            ).forEach { permission ->
+                if ((0 until permissions.length).none {
+                        (permissions.item(it) as Element).getAttribute("android:name") == permission
+                    }
+                ) {
+                    manifest.insertBefore(
+                        doc.createElement("uses-permission").apply { setAttribute("android:name", permission) },
+                        manifest.firstChild,
+                    )
+                }
+            }
+
+            val services = doc.getElementsByTagName("service")
+            val service = (0 until services.length).map { services.item(it) as Element }
+                .firstOrNull { it.getAttribute("android:name") == SYSTEM_FOREGROUND_SERVICE }
+                ?: doc.createElement("service").apply {
+                    setAttribute("android:name", SYSTEM_FOREGROUND_SERVICE)
+                    setAttribute("android:exported", "false")
+                    doc.getElementsByTagName("application").item(0).appendChild(this)
+                }
+            val types = service.getAttribute("android:foregroundServiceType")
+                .split('|').filter { it.isNotBlank() }.toMutableSet()
+            types += "dataSync"
+            service.setAttribute("android:foregroundServiceType", types.joinToString("|"))
+        }
+    }
+}
+
 @Suppress("unused")
 val backgroundWorkerPatch = bytecodePatch(
     name = "Background daily check-in worker",
@@ -55,6 +102,7 @@ val backgroundWorkerPatch = bytecodePatch(
 ) {
     compatibleWith(COMPATIBILITY_SIMOSA)
     extendWith("extensions/extension.mpe")
+    dependsOn(foregroundServiceManifestPatch)
 
     execute {
         val onCreate = mainActivityOnCreateFingerprint.method
