@@ -1,3 +1,9 @@
+## [1.27.4](https://github.com/totsiaw/proxma-patches/compare/1.27.3...1.27.4) (2026-10-28)
+
+### Bug Fixes
+
+* **simosa:** let the streak restore go through when the restore ad can't show ([6ca6e12](https://github.com/totsiaw/proxma-patches/commit/6ca6e12adb95d57e6e0b1a8d29b4762584b35c8c)), closes [#45](https://github.com/totsiaw/proxma-patches/issues/45) [#58](https://github.com/totsiaw/proxma-patches/issues/58)
+
 ## [1.27.3](https://github.com/totsiaw/proxma-patches/compare/1.27.2...1.27.3) (2026-10-26)
 
 ### Bug Fixes
