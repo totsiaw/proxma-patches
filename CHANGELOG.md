@@ -1,3 +1,10 @@
+## [1.27.5](https://github.com/totsiaw/proxma-patches/compare/1.27.4...1.27.5) (2026-10-31)
+
+### Bug Fixes
+
+* **mytelenor:** make background runs work without opening the app ([3f16fe8](https://github.com/totsiaw/proxma-patches/commit/3f16fe8f8bf9937d998ce97a4ad7594dd3428b8d))
+* **mytelenor:** run the daily claims in a foreground service so ColorOS doesn't cut them off ([fb77f35](https://github.com/totsiaw/proxma-patches/commit/fb77f35fb4395e868b9be6de5f9cb00053fb7832))
+
 ## [1.27.4](https://github.com/totsiaw/proxma-patches/compare/1.27.3...1.27.4) (2026-10-28)
 
 ### Bug Fixes
