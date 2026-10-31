@@ -1,6 +1,7 @@
 package app.proxma.simosa;
 
 import android.content.Context;
+import android.net.ConnectivityManager;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -81,6 +82,9 @@ public final class LadderClaim {
         final CountDownLatch loadLatch = new CountDownLatch(1);
         final AtomicReference<Object> loadResponse = new AtomicReference<>(null);
         final AtomicReference<String> loadError = new AtomicReference<>(null);
+        // The app answers from its own cache during the request call, and from the network later.
+        final AtomicBoolean loadCalling = new AtomicBoolean(false);
+        final AtomicBoolean loadFromCache = new AtomicBoolean(false);
 
         Object loadProxy = Proxy.newProxyInstance(
             context.getClassLoader(),
@@ -91,6 +95,7 @@ public final class LadderClaim {
                     try {
                         String name = method.getName();
                         if ("onDailyRewardListSuccess".equals(name) && args != null && args.length > 0) {
+                            loadFromCache.set(loadCalling.get());
                             loadResponse.set(args[0]);
                         } else if ("onDailyRewardListFailed".equals(name)) {
                             String text = args != null && args.length > 0 ? String.valueOf(args[0]) : "";
@@ -121,11 +126,14 @@ public final class LadderClaim {
             @Override
             public void run() {
                 try {
+                    loadCalling.set(true);
                     requestList.invoke(loadDs, loadProxy);
                 } catch (Throwable t) {
                     log("LADDER_LOAD_INVOKE_ERR " + t);
                     loadError.set("invoke: " + t);
                     loadLatch.countDown();
+                } finally {
+                    loadCalling.set(false);
                 }
             }
         });
@@ -163,7 +171,17 @@ public final class LadderClaim {
         String currentStatus = (String) data.getClass().getMethod("getCurrentStatus").invoke(data);
         List<?> daysList = (List<?>) data.getClass().getMethod("getDaysList").invoke(data);
 
-        log("LADDER_STATE claimed=" + claimed + " day=" + currentDay + " status=" + currentStatus);
+        String source = loadFromCache.get() ? "cache" : "network";
+        boolean online = isOnline(context);
+        log("LADDER_STATE source=" + source + " online=" + online + " claimed=" + claimed
+            + " day=" + currentDay + " status=" + currentStatus);
+
+        // With no network the app returns its last saved list whatever its age, so yesterday's state
+        // cannot decide today's claim. Online, it only uses the cache after a claim made today.
+        if (loadFromCache.get() && !(online && "true".equals(claimed))) {
+            sResult = "saved list not used (status " + currentStatus + ", day " + currentDay + ")";
+            return false;
+        }
 
         if ("true".equals(claimed)) {
             AutoClaim.latch(context, "ladder");
@@ -177,7 +195,7 @@ public final class LadderClaim {
         // what a run sees before the server opens the new day's free rung.
         if (!"0".equals(currentStatus)) {
             log("LADDER_SKIP_NOT_FREE status=" + currentStatus);
-            sResult = "not free yet (status " + currentStatus + ")";
+            sResult = "not free yet (status " + currentStatus + ", day " + currentDay + ", " + source + ")";
             return false;
         }
 
@@ -304,7 +322,18 @@ public final class LadderClaim {
         return false;
     }
 
+    private static boolean isOnline(Context context) {
+        try {
+            ConnectivityManager manager =
+                (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+            return manager != null && manager.getActiveNetworkInfo() != null;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
     private static void log(String msg) {
         Log.i(TAG, msg);
+        Trace.line(msg);
     }
 }

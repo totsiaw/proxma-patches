@@ -666,5 +666,6 @@ public final class MilestoneClaim {
 
     private static void log(String msg) {
         Log.i(TAG, msg);
+        Trace.line(msg);
     }
 }

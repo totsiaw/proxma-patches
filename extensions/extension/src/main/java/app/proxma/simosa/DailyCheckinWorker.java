@@ -38,19 +38,21 @@ public final class DailyCheckinWorker extends Worker {
     @Override
     public Result doWork() {
         Context context = getApplicationContext();
+        Trace.init(context);
+        WorkerNotify.log("WORKER_START attempt=" + getRunAttemptCount());
         goForeground(context);
-        AppAuth.primeLogin();
+        AppAuth.primeLogin(context);
 
         // Both daily claims already done: only milestones can still be due (they have their own
         // per-level state). Notify only when that check did something, never for a bare no-op.
         boolean checkinLatched = AutoClaim.check(context, "checkin") != null;
         boolean ladderLatched = AutoClaim.check(context, "ladder") != null;
         if (checkinLatched && ladderLatched) {
-            Log.i(TAG, "WORKER_NOOP both latched");
+            WorkerNotify.log("WORKER_NOOP both latched");
             try {
                 BackgroundCheckin.doCheckIn(context);
             } catch (Throwable t) {
-                Log.w(TAG, "WORKER_MILESTONE_ERR " + t);
+                WorkerNotify.log("WORKER_MILESTONE_ERR " + t);
             }
             if (MilestoneClaim.hasNews()) {
                 WorkerNotify.notifyStatus(context, "Ladder: latched", "next ~00:05 PKT",
@@ -64,7 +66,7 @@ public final class DailyCheckinWorker extends Worker {
         try {
             settled = BackgroundCheckin.doCheckIn(context);
         } catch (Throwable t) {
-            Log.w(TAG, "WORKER_ERR " + t);
+            WorkerNotify.log("WORKER_ERR " + t);
             settled = false;
         }
 
@@ -72,11 +74,11 @@ public final class DailyCheckinWorker extends Worker {
         try {
             ladderSettled = LadderClaim.tryClaimLadder(context);
         } catch (Throwable t) {
-            Log.w(TAG, "LADDER_ERR " + t);
+            WorkerNotify.log("LADDER_ERR " + t);
         }
 
         if ((!settled || !ladderSettled) && getRunAttemptCount() < MAX_RETRIES) {
-            Log.i(TAG, "WORKER_RETRY attempt=" + getRunAttemptCount()
+            WorkerNotify.log("WORKER_RETRY attempt=" + getRunAttemptCount()
                 + " checkin=" + settled + " ladder=" + ladderSettled);
             // Always post on retry: ColorOS hides this app's logcat, so the notification is the
             // only place a failed run's reason (Checkin:/Ladder: lines) can be read afterwards.
@@ -125,14 +127,15 @@ public final class DailyCheckinWorker extends Worker {
                 .build();
             setForegroundAsync(new ForegroundInfo(FGS_NOTIF_ID, notification,
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)).get(10, TimeUnit.SECONDS);
-            Log.i(TAG, "WORKER_FGS started");
+            WorkerNotify.log("WORKER_FGS started");
         } catch (Throwable t) {
-            Log.w(TAG, "WORKER_FGS_REFUSED " + t);
+            WorkerNotify.log("WORKER_FGS_REFUSED " + t);
         }
     }
 
     /** Called from the patched {@code MainActivity.onCreate}; safe to call on every launch. */
     public static void schedule(Context context) {
+        Trace.init(context);
         if (context == null) {
             return;
         }
@@ -157,9 +160,9 @@ public final class DailyCheckinWorker extends Worker {
             // KEEP = don't cancel a pending midnight if user opens app at 00:04
             scheduleMidnight(context, ExistingWorkPolicy.KEEP);
 
-            Log.i(TAG, "WORKER_SCHEDULED");
+            WorkerNotify.log("WORKER_SCHEDULED");
         } catch (Throwable t) {
-            Log.w(TAG, "WORKER_SCHEDULE_ERR " + t);
+            WorkerNotify.log("WORKER_SCHEDULE_ERR " + t);
         }
     }
 
@@ -175,9 +178,9 @@ public final class DailyCheckinWorker extends Worker {
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 10, TimeUnit.MINUTES)
                 .build();
             WorkManager.getInstance(context).enqueueUniqueWork(WORK_MIDNIGHT, policy, midnight);
-            Log.i(TAG, "WORKER_MIDNIGHT delay=" + (delayMs / 60000) + "min policy=" + policy);
+            WorkerNotify.log("WORKER_MIDNIGHT delay=" + (delayMs / 60000) + "min policy=" + policy);
         } catch (Throwable t) {
-            Log.w(TAG, "WORKER_MIDNIGHT_ERR " + t);
+            WorkerNotify.log("WORKER_MIDNIGHT_ERR " + t);
         }
     }
 

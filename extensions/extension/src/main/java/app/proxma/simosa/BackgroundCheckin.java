@@ -471,5 +471,6 @@ public final class BackgroundCheckin {
 
     static void log(String message) {
         Log.i(TAG, message);
+        Trace.line(message);
     }
 }

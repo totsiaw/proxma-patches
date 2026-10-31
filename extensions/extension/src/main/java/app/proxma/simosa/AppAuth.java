@@ -42,12 +42,14 @@ final class AppAuth {
      * the key, and without it {@code getUserData(context)} returns null and requests carry no msisdn
      * or token. The method is added by the patch, which copies the key setup from the app.
      */
-    static void primeLogin() {
+    static void primeLogin(Context context) {
         try {
             Class<?> dataManager = Class.forName(DATA_MANAGER);
             Object companion = dataManager.getField("Companion").get(null);
             Object instance = companion.getClass().getMethod("getInstance").invoke(companion);
             dataManager.getMethod("proxmaPrimeLogin").invoke(instance);
+            Object login = dataManager.getMethod("getUserData", Context.class).invoke(instance, context);
+            BackgroundCheckin.log("AUTH_PRIME login=" + (login != null));
         } catch (Throwable t) {
             BackgroundCheckin.log("AUTH_PRIME_ERR " + MilestoneClaim.unwrap(t));
         }

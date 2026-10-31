@@ -485,6 +485,9 @@ val autoCheckInPatch = bytecodePatch(
                 invoke-static {v6, v4, v3}, $AUTO_CLAIM->fired(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
                 invoke-virtual {p0, v2, v3}, $SIMOSA_REWARD_LADDER_VIEW_MODEL->L1(${SIMOSA_REWARD_DAY_ITEM}Ljava/lang/String;)V
                 return-void
+                :proxma_not_free
+                invoke-static {v6, v3}, $AUTO_CLAIM->notFree(Ljava/lang/String;Ljava/lang/String;)V
+                return-void
                 :proxma_no_response
                 const-string v1, "skip no-response"
                 goto :proxma_skip
@@ -497,8 +500,6 @@ val autoCheckInPatch = bytecodePatch(
                 :proxma_no_rung
                 const-string v1, "skip no-rung"
                 goto :proxma_skip
-                :proxma_not_free
-                const-string v1, "skip not-free"
                 :proxma_skip
                 invoke-static {v6, v1}, $AUTO_CLAIM->log(Ljava/lang/String;Ljava/lang/String;)V
                 return-void
