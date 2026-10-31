@@ -172,10 +172,13 @@ public final class LadderClaim {
             return true;
         }
 
-        if ("1".equals(currentStatus)) {
-            log("LADDER_SKIP_PAID status=1");
-            sResult = "skip paid";
-            return true;
+        // Only "0" is the free route. After a free claim the server moves to the next day with status
+        // "1", and a claim in that state spends real balance. Not latched and retried: this is also
+        // what a run sees before the server opens the new day's free rung.
+        if (!"0".equals(currentStatus)) {
+            log("LADDER_SKIP_NOT_FREE status=" + currentStatus);
+            sResult = "not free yet (status " + currentStatus + ")";
+            return false;
         }
 
         if (daysList == null || daysList.isEmpty()) {
