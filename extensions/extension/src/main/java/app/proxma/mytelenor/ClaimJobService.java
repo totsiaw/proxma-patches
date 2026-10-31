@@ -125,6 +125,10 @@ public final class ClaimJobService extends JobService {
         int retries = day.equals(prefs.getString(KEY_RETRY_DAY, "")) ? prefs.getInt(KEY_RETRY_N, 0) : 0;
         Log.i(TAG, "JOB_START id=" + Integer.toHexString(jobId) + " retries=" + retries);
 
+        if (AutoClaim.check(context, "streak") == null || AutoClaim.check(context, "quiz") == null) {
+            AppSession.seedNetworkHeader(context);
+        }
+
         boolean streakDone = false;
         try {
             streakDone = StreakClaim.tryClaimStreak(context);
