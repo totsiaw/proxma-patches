@@ -14,7 +14,7 @@ internal val COMPATIBILITY_SIMOSA = Compatibility(
     targets = listOf(
         AppTarget(
             version = "3.3.6",
-            minSdk = 23,
+            minSdk = 24,
         ),
         AppTarget(
             version = "3.3.5",

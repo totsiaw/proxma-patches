@@ -34,7 +34,7 @@ import java.net.URL;
  * </ul>
  *
  * <p>The app types it reaches for ({@code NetworkCacheManager},
- * {@code DailyRewardAuthTokenResponse}, {@code K8.X}) are accessed by reflection so a rename cannot
+ * {@code DailyRewardAuthTokenResponse}, {@code DataManager}) are accessed by reflection so a rename cannot
  * break the patch, and every reflection failure falls through to the next tier.
  */
 public final class BackgroundCheckin {
@@ -238,8 +238,14 @@ public final class BackgroundCheckin {
             String rawKey = "key_gamification_authToken";
             String hashedKey = rawKey;
             try {
-                hashedKey = (String) Class.forName("K8.X")
-                    .getMethod("M", String.class).invoke(null, rawKey);
+                // What the app's own key helper does (K8.X.M on 3.3.5, O8.X.M on 3.3.6): the raw key,
+                // "-", and the parent line's msisdn. Built here so the obfuscated name can't drift.
+                Class<?> dataManager = Class.forName("com.jazz.jazzworld.data.manager.DataManager");
+                Object companion = dataManager.getField("Companion").get(null);
+                Object manager = companion.getClass().getMethod("getInstance").invoke(companion);
+                Object parent = dataManager.getMethod("getParentUserData").invoke(manager);
+                Object msisdn = parent == null ? null : parent.getClass().getMethod("getMsisdn").invoke(parent);
+                hashedKey = rawKey + "-" + (msisdn == null ? "" : msisdn);
             } catch (Throwable ignored) {
                 // Best effort: the unhashed key is what some builds store the entry under.
             }
