@@ -225,6 +225,18 @@ private val disableAutoCollectionResourcePatch = resourcePatch(
                 "google_analytics_adid_collection_enabled" to "false",
                 "google_analytics_ssaid_collection_enabled" to "false",
             ).forEach { (name, value) -> setFlag(name, value) }
+
+            // 3.3.6 mediates AppLovin and Unity, and both start themselves from the manifest
+            // instead of waiting for the (stubbed) MobileAds init. Absent on older builds.
+            fun remove(tag: String, name: String) {
+                val elements = doc.getElementsByTagName(tag)
+                for (i in elements.length - 1 downTo 0) {
+                    val el = elements.item(i) as Element
+                    if (el.getAttribute("android:name") == name) el.parentNode.removeChild(el)
+                }
+            }
+            remove("provider", "com.applovin.sdk.AppLovinInitProvider")
+            remove("meta-data", "com.unity3d.services.core.configuration.AdsSdkInitializer")
         }
     }
 }
@@ -316,5 +328,8 @@ val removeAdsAndTrackingPatch = bytecodePatch(
                 return-object v0
             """.trimIndent(),
         )
+
+        // 3.3.6+: the banner, interstitial and native ads moved to the next-gen ads SDK.
+        stubNextGenAds(NEXT_GEN_ADS)
     }
 }

@@ -86,5 +86,9 @@ val removeCheckInAdsPatch = bytecodePatch(
         stub(feedAdsLoadAdFingerprint)
         stub(rewardedAdLoadAdRequestFingerprint)
         stub(rewardedAdLoadAdManagerFingerprint)
+
+        // 3.3.6+: the same rewarded ad, now on the next-gen ads SDK. pollAd() stays null, so the
+        // holder takes its "ad is not available" branch and still reports through onAdFinished.
+        stubNextGenAds(NEXT_GEN_REWARDED_ADS)
     }
 }
