@@ -208,14 +208,14 @@ public final class MilestoneClaim {
         }
     }
 
-    private static Throwable unwrap(Throwable t) {
+    static Throwable unwrap(Throwable t) {
         while (t instanceof java.lang.reflect.InvocationTargetException && t.getCause() != null) {
             t = t.getCause();
         }
         return t;
     }
 
-    private static void close(Object client) {
+    static void close(Object client) {
         if (client instanceof java.io.Closeable) {
             try {
                 ((java.io.Closeable) client).close();
@@ -339,7 +339,7 @@ public final class MilestoneClaim {
     }
 
     /** {@code clientOut[0]} receives the Ktor client so the caller can close it. */
-    private static Object claimRepo(Context context, Object[] clientOut) throws Exception {
+    static Object claimRepo(Context context, Object[] clientOut) throws Exception {
         Class<?> modules = Class.forName(REMOTE_MODULES);
         Object instance = modules.getField("INSTANCE").get(null);
         Object client = method(modules, "provideHttpClient", 0).invoke(instance);
@@ -363,7 +363,7 @@ public final class MilestoneClaim {
         return claim.invoke(repo, request, continuation);
     }
 
-    private static Method collectMethod(Object flow) throws NoSuchMethodException {
+    static Method collectMethod(Object flow) throws NoSuchMethodException {
         for (Method m : flow.getClass().getMethods()) {
             if ("collect".equals(m.getName()) && m.getParameterTypes().length == 2
                 && m.getParameterTypes()[0].isInterface()) {
@@ -432,7 +432,7 @@ public final class MilestoneClaim {
         }
     }
 
-    private static Throwable resultException(Object result) {
+    static Throwable resultException(Object result) {
         if (result instanceof Throwable) return (Throwable) result;
         if (result != null) {
             for (java.lang.reflect.Field f : result.getClass().getDeclaredFields()) {
@@ -539,11 +539,11 @@ public final class MilestoneClaim {
 
     // --- Kotlin interop without a Kotlin dependency ---
 
-    private interface Callback {
+    interface Callback {
         void done(Object result);
     }
 
-    private static Object continuation(final Callback callback) throws Exception {
+    static Object continuation(final Callback callback) throws Exception {
         Class<?> type = Class.forName("kotlin.coroutines.Continuation");
         final Object context = Class.forName("kotlin.coroutines.EmptyCoroutineContext")
             .getField("INSTANCE").get(null);
@@ -563,11 +563,11 @@ public final class MilestoneClaim {
             });
     }
 
-    private static Object unit() throws Exception {
+    static Object unit() throws Exception {
         return Class.forName("kotlin.Unit").getField("INSTANCE").get(null);
     }
 
-    private static Object objectMethod(Object proxy, Method method, Object[] args, String label) {
+    static Object objectMethod(Object proxy, Method method, Object[] args, String label) {
         String name = method.getName();
         if ("toString".equals(name)) return label;
         if ("hashCode".equals(name)) return System.identityHashCode(proxy);
@@ -584,7 +584,7 @@ public final class MilestoneClaim {
         throw new NoSuchMethodException(owner.getName() + "." + name);
     }
 
-    private static String field(Object target, String getter) {
+    static String field(Object target, String getter) {
         if (target == null) return null;
         try {
             Object value = target.getClass().getMethod(getter).invoke(target);
