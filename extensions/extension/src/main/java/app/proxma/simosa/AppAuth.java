@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicReference;
  *
  * <p>The cache key is {@code key_gamification_authToken-<parent msisdn>} ({@code K8.X.M} on 3.3.5,
  * {@code D8.X.M} on 3.3.4.2), built here so an obfuscated class name cannot change it. The parent
- * comes from the login data in memory, which {@code getUserData(context)} loads in a cold process.
+ * comes from the login data in memory, which {@code getUserData(context)} loads after {@link #primeLogin}.
  */
 final class AppAuth {
 
@@ -36,6 +36,22 @@ final class AppAuth {
     static String sFailure = "n/a";
 
     private AppAuth() {}
+
+    /**
+     * Makes the stored login readable. A process started for the worker has no MainActivity to set
+     * the key, and without it {@code getUserData(context)} returns null and requests carry no msisdn
+     * or token. The method is added by the patch, which copies the key setup from the app.
+     */
+    static void primeLogin() {
+        try {
+            Class<?> dataManager = Class.forName(DATA_MANAGER);
+            Object companion = dataManager.getField("Companion").get(null);
+            Object instance = companion.getClass().getMethod("getInstance").invoke(companion);
+            dataManager.getMethod("proxmaPrimeLogin").invoke(instance);
+        } catch (Throwable t) {
+            BackgroundCheckin.log("AUTH_PRIME_ERR " + MilestoneClaim.unwrap(t));
+        }
+    }
 
     /** The app's cache key for the token, or null when there is no login data to build it from. */
     private static String cacheKey(Context context) throws Exception {

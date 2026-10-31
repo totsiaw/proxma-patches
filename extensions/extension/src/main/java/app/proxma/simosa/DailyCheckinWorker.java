@@ -39,6 +39,7 @@ public final class DailyCheckinWorker extends Worker {
     public Result doWork() {
         Context context = getApplicationContext();
         goForeground(context);
+        AppAuth.primeLogin();
 
         // Both daily claims already done: only milestones can still be due (they have their own
         // per-level state). Notify only when that check did something, never for a bare no-op.

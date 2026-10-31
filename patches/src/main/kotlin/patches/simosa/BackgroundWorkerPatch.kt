@@ -8,8 +8,12 @@ import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.patch.resourcePatch
 import com.android.tools.smali.dexlib2.AccessFlags
 import com.android.tools.smali.dexlib2.Opcode
+import com.android.tools.smali.dexlib2.iface.ClassDef
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
+import com.android.tools.smali.dexlib2.iface.reference.FieldReference
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
+import com.android.tools.smali.dexlib2.iface.reference.StringReference
+import com.android.tools.smali.dexlib2.util.ReferenceUtil
 import org.w3c.dom.Element
 
 /*
@@ -28,10 +32,16 @@ import org.w3c.dom.Element
  * This patch only has to make the app call DailyCheckinWorker.schedule(context) once —
  * MainActivity.onCreate. One instruction, no registers touched beyond p0, no try/catch: if the
  * anchor is missing the patch fails loudly instead of shipping a build where nothing runs.
+ *
+ * The login data on disk is encrypted, and the key is only put in memory by a private method of
+ * MainActivity. A process started for the worker has no Activity, so `getUserData(context)` decrypts
+ * with an empty key and gets nothing, and every request goes out with no msisdn or token. The patch
+ * copies that key setup into `DataManager.proxmaPrimeLogin()`, which the worker calls first.
  */
 
 private const val MAIN_ACTIVITY = "Lcom/jazz/jazzworld/presentation/ui/main/MainActivity;"
 private const val DAILY_CHECKIN_WORKER = "Lapp/proxma/simosa/DailyCheckinWorker;"
+private const val DATA_MANAGER = "Lcom/jazz/jazzworld/data/manager/DataManager;"
 private const val CONTEXT = "Landroid/content/Context;"
 private const val BUNDLE = "Landroid/os/Bundle;"
 
@@ -47,6 +57,55 @@ internal val mainActivityOnCreateFingerprint = Fingerprint(
         classDef.type == MAIN_ACTIVITY && method.name == "onCreate"
     },
 )
+
+/** MainActivity strips this stray character from the key after setting it. */
+private const val LOGIN_KEY_STRIPPED = "\u00c2"
+
+/**
+ * Smali for what MainActivity does to set the login key, found by shape because the names around it
+ * are obfuscated: `<holder>.a().<setter>("<key>")`, followed by stripping [LOGIN_KEY_STRIPPED].
+ */
+private fun loginKeySetup(activity: ClassDef): String {
+    val setups = activity.methods.mapNotNull { method ->
+        if (method.parameterTypes.isNotEmpty() || method.returnType != "V") return@mapNotNull null
+        val body = method.implementation?.instructions?.toList() ?: return@mapNotNull null
+        if (body.size < 5) return@mapNotNull null
+        val opcodes = body.take(5).map { it.opcode }
+        if (opcodes != listOf(
+                Opcode.SGET_OBJECT, Opcode.INVOKE_VIRTUAL, Opcode.MOVE_RESULT_OBJECT,
+                Opcode.CONST_STRING, Opcode.INVOKE_VIRTUAL,
+            )
+        ) {
+            return@mapNotNull null
+        }
+        val strips = body.any {
+            it.opcode == Opcode.CONST_STRING &&
+                ((it as ReferenceInstruction).reference as StringReference).string == LOGIN_KEY_STRIPPED
+        }
+        val setter = (body[4] as ReferenceInstruction).reference as MethodReference
+        if (!strips || setter.returnType != "V" ||
+            setter.parameterTypes.map { it.toString() } != listOf("Ljava/lang/String;")
+        ) {
+            return@mapNotNull null
+        }
+        val holder = (body[0] as ReferenceInstruction).reference as FieldReference
+        val getter = (body[1] as ReferenceInstruction).reference as MethodReference
+        val key = ((body[3] as ReferenceInstruction).reference as StringReference).string
+            .replace(LOGIN_KEY_STRIPPED, "")
+            .map { "\\u%04x".format(it.code) }
+            .joinToString("")
+        """
+            sget-object v0, ${ReferenceUtil.getReferenceString(holder)}
+            invoke-virtual {v0}, ${ReferenceUtil.getReferenceString(getter)}
+            move-result-object v0
+            const-string v1, "$key"
+            invoke-virtual {v0, v1}, ${ReferenceUtil.getReferenceString(setter)}
+            return-void
+        """
+    }
+    return setups.singleOrNull()
+        ?: throw PatchException("Expected one login key setup in MainActivity, found ${setups.size}")
+}
 
 private const val SYSTEM_FOREGROUND_SERVICE = "androidx.work.impl.foreground.SystemForegroundService"
 
@@ -131,6 +190,11 @@ val backgroundWorkerPatch = bytecodePatch(
         onCreate.addInstructions(
             superCall + 1,
             "invoke-static {p0}, $DAILY_CHECKIN_WORKER->schedule($CONTEXT)V",
+        )
+
+        mutableClassDefBy(DATA_MANAGER).addProxmaMethod(
+            "proxmaPrimeLogin", emptyList(), "V", 3,
+            loginKeySetup(mutableClassDefBy(MAIN_ACTIVITY)),
         )
     }
 }
