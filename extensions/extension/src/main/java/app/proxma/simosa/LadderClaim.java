@@ -191,9 +191,11 @@ public final class LadderClaim {
         }
 
         // Only "0" is the free route. After a free claim the server moves to the next day with status
-        // "1", and a claim in that state spends real balance. Not latched and retried: this is also
-        // what a run sees before the server opens the new day's free rung.
+        // "1", and a claim in that state spends real balance. The server also sends "2" (seen on day 1
+        // after a finished week), which the app has no claim flow for. Not latched and retried: this is
+        // also what a run sees before the server opens the new day's free rung.
         if (!"0".equals(currentStatus)) {
+            logRung(daysList, currentDay);
             log("LADDER_SKIP_NOT_FREE status=" + currentStatus);
             sResult = "not free yet (status " + currentStatus + ", day " + currentDay + ", " + source + ")";
             return false;
@@ -320,6 +322,24 @@ public final class LadderClaim {
         }
         sResult = "claim fail: " + failText;
         return false;
+    }
+
+    /** The current rung's price and flags, to see what a non-free state is offering. */
+    private static void logRung(List<?> daysList, String currentDay) {
+        if (daysList == null) {
+            return;
+        }
+        try {
+            for (Object item : daysList) {
+                if (String.valueOf(currentDay).equals(MilestoneClaim.field(item, "getDay"))) {
+                    log("LADDER_RUNG price=" + MilestoneClaim.field(item, "getPrice")
+                        + " active=" + MilestoneClaim.field(item, "is_active"));
+                    return;
+                }
+            }
+        } catch (Throwable t) {
+            log("LADDER_RUNG_ERR " + t);
+        }
     }
 
     private static boolean isOnline(Context context) {

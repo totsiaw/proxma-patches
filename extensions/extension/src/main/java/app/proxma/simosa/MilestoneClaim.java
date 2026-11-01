@@ -509,7 +509,9 @@ public final class MilestoneClaim {
                     "com.jazz.jazzworld.data.network.genericapis.helper.AbstractBaseRequest"),
                     Context.class, String.class)
                 .invoke(null, request, context, String.valueOf(System.currentTimeMillis()));
-            Object headers = envelope.getClass().getMethod("getRequestHeaders").invoke(envelope);
+            // addRequest sets the headers on the request and encrypts it into the envelope's body, so
+            // the envelope's own header field is always empty.
+            Object headers = request.getClass().getMethod("getRequestHeaders").invoke(request);
             String checks = "msisdn" + mark(field(headers, "getMsisdn"))
                 + " token" + mark(field(headers, "getToken"))
                 + " sig" + mark(field(envelope, "getRequestConfig"))
