@@ -30,6 +30,7 @@ public final class DailyCheckinWorker extends Worker {
     private static final int MAX_RETRIES = 6;
     private static final String FGS_CHANNEL_ID = "proxma_fgs";
     private static final int FGS_NOTIF_ID = 1004;
+    private static final Object RUN_LOCK = new Object();
 
     public DailyCheckinWorker(Context context, WorkerParameters parameters) {
         super(context, parameters);
@@ -37,6 +38,14 @@ public final class DailyCheckinWorker extends Worker {
 
     @Override
     public Result doWork() {
+        // A stopped app's retry and its fresh run start together when it is reopened. Claiming at the
+        // same time gets one refused by the server, so the second run waits and then finds the latch.
+        synchronized (RUN_LOCK) {
+            return runClaims();
+        }
+    }
+
+    private Result runClaims() {
         Context context = getApplicationContext();
         Trace.init(context);
         WorkerNotify.log("WORKER_START attempt=" + getRunAttemptCount());
