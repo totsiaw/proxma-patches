@@ -50,7 +50,9 @@ public final class MilestoneClaim {
     private static final String PREFS = "proxma_simosa";
     private static final String KEY_LEGACY_PREFIX = "proxma_milestone_";
     private static final String KEY_DONE_PREFIX = "proxma_milestone_done_";
-    private static final String KEY_TRY_PREFIX = "proxma_milestone_try_";
+    // "try2": refusals counted by builds before the login fix were missing-login refusals, so they are
+    // ignored, and a level refused earlier today is claimed again on the first run of this build.
+    private static final String KEY_TRY_PREFIX = "proxma_milestone_try2_";
     private static final String KEY_DRY_PREFIX = "proxma_milestone_dry_";
     private static final String KEY_OK_PREFIX = "proxma_milestone_ok_";
     private static final String KEY_RECHECK_PREFIX = "proxma_milestone_recheck_";
