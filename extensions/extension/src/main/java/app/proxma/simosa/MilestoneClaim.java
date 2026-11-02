@@ -52,6 +52,8 @@ public final class MilestoneClaim {
     private static final String KEY_DONE_PREFIX = "proxma_milestone_done_";
     private static final String KEY_TRY_PREFIX = "proxma_milestone_try_";
     private static final String KEY_DRY_PREFIX = "proxma_milestone_dry_";
+    private static final String KEY_OK_PREFIX = "proxma_milestone_ok_";
+    private static final String KEY_RECHECK_PREFIX = "proxma_milestone_recheck_";
 
     private static final String STATE_URL = "https://api-prod-dailycheckin.simosa.app/checkin/state";
     private static final String LEVELS_URL = "https://api-prod-dailycheckin.simosa.app/levels";
@@ -118,6 +120,7 @@ public final class MilestoneClaim {
 
         SharedPreferences prefs = context.getSharedPreferences(PREFS, 0);
         Set<Integer> done = loadDone(prefs, account, currentLevel);
+        recheckCurrentLevel(prefs, account, done, currentLevel);
 
         List<Integer> pending = new ArrayList<>();
         if (currentLevel > 0 && !done.contains(currentLevel)) {
@@ -162,11 +165,14 @@ public final class MilestoneClaim {
             log("MILESTONE_RESULT level=" + level + " " + outcome.kind + " " + outcome.detail);
             if (outcome.kind == Outcome.SUCCESS) {
                 markDone(prefs, account, done, level);
+                markOk(prefs, account, level);
                 summary.append("claimed L").append(level).append("; ");
             } else if (outcome.kind == Outcome.REJECTED) {
                 int attempts = attemptsSoFar + 1;
                 prefs.edit().putString(tryKey, attempts + ":" + today).apply();
-                if (attempts >= MAX_ATTEMPTS) {
+                // A recheck of an old level gets one try: a refusal there most likely means it was paid.
+                boolean recheck = prefs.getBoolean(KEY_RECHECK_PREFIX + account + "_" + level, false);
+                if (attempts >= MAX_ATTEMPTS || recheck) {
                     markDone(prefs, account, done, level);
                     summary.append("L").append(level).append(" gave up: ").append(outcome.detail).append("; ");
                 } else {
@@ -250,6 +256,48 @@ public final class MilestoneClaim {
         prefs.edit().putString(doneKey, join(done)).apply();
         log("MILESTONE_MIGRATE current=" + currentLevel + " legacy=" + legacy + " done=" + join(done));
         return done;
+    }
+
+    /**
+     * Builds before the login-key fix marked a level done after three refusals that were really a
+     * missing login, so the reward was never paid. Gives the current level one more claim, once,
+     * when there is no record of it succeeding. The server refuses a level that was already paid.
+     */
+    private static void recheckCurrentLevel(SharedPreferences prefs, String account, Set<Integer> done,
+                                            int currentLevel) {
+        if (currentLevel <= 0 || !done.contains(currentLevel)) {
+            return;
+        }
+        String recheckKey = KEY_RECHECK_PREFIX + account + "_" + currentLevel;
+        if (prefs.getBoolean(recheckKey, false) || levelsOf(prefs.getString(KEY_OK_PREFIX + account, ""))
+            .contains(currentLevel)) {
+            return;
+        }
+        done.remove(currentLevel);
+        prefs.edit()
+            .putBoolean(recheckKey, true)
+            .putString(KEY_DONE_PREFIX + account, join(done))
+            .remove(KEY_TRY_PREFIX + account + "_" + currentLevel)
+            .apply();
+        log("MILESTONE_RECHECK level=" + currentLevel);
+    }
+
+    private static void markOk(SharedPreferences prefs, String account, int level) {
+        Set<Integer> ok = levelsOf(prefs.getString(KEY_OK_PREFIX + account, ""));
+        ok.add(level);
+        prefs.edit().putString(KEY_OK_PREFIX + account, join(ok)).apply();
+    }
+
+    private static Set<Integer> levelsOf(String stored) {
+        Set<Integer> levels = new LinkedHashSet<>();
+        for (String part : stored.split(",")) {
+            try {
+                if (!part.trim().isEmpty()) levels.add(Integer.parseInt(part.trim()));
+            } catch (NumberFormatException ignored) {
+                // skip a corrupt entry
+            }
+        }
+        return levels;
     }
 
     private static void markDone(SharedPreferences prefs, String account, Set<Integer> done, int level) {
@@ -376,6 +424,13 @@ public final class MilestoneClaim {
     private static Outcome claimViaApp(Context context, ClaimValues values) {
         Object[] client = new Object[1];
         try {
+            // Without the login in memory the request goes out with no msisdn or token and the server
+            // refuses it. Before the login-key fix every background claim failed this way, and three
+            // such refusals gave the level up for good. Not the server's answer, so not counted.
+            String missing = missingLogin(context, newClaimRequest(values));
+            if (missing != null) {
+                return new Outcome(Outcome.TRANSIENT, "no login in request (" + missing + ")");
+            }
             final Object unit = unit();
             final AtomicReference<Object> last = new AtomicReference<>(null);
             final AtomicReference<Throwable> failure = new AtomicReference<>(null);
@@ -430,6 +485,20 @@ public final class MilestoneClaim {
         } finally {
             close(client[0]);
         }
+    }
+
+    /** Which login fields the app's envelope leaves empty for this request, or null if none. */
+    private static String missingLogin(Context context, Object request) throws Exception {
+        Class.forName(API_RESOURCES_KT)
+            .getMethod("addRequest", Class.forName(
+                "com.jazz.jazzworld.data.network.genericapis.helper.AbstractBaseRequest"),
+                Context.class, String.class)
+            .invoke(null, request, context, String.valueOf(System.currentTimeMillis()));
+        Object headers = request.getClass().getMethod("getRequestHeaders").invoke(request);
+        String missing = "";
+        if (field(headers, "getMsisdn") == null || field(headers, "getMsisdn").isEmpty()) missing += "msisdn ";
+        if (field(headers, "getToken") == null || field(headers, "getToken").isEmpty()) missing += "token";
+        return missing.isEmpty() ? null : missing.trim();
     }
 
     static Throwable resultException(Object result) {
