@@ -1,3 +1,9 @@
+## [1.28.0](https://github.com/totsiaw/proxma-patches/compare/1.27.6...1.28.0) (2026-11-02)
+
+### New Features
+
+* **rox:** add auto check-in and banner/interstitial ad removal for ROX 3.0.13 ([c70bb02](https://github.com/totsiaw/proxma-patches/commit/c70bb029ac46c22ac25c49ee92693c94c788bc7d))
+
 ## [1.27.6](https://github.com/totsiaw/proxma-patches/compare/1.27.5...1.27.6) (2026-11-02)
 
 ### Bug Fixes
