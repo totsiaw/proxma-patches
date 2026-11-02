@@ -1,3 +1,9 @@
+## [1.28.1](https://github.com/totsiaw/proxma-patches/compare/1.28.0...1.28.1) (2026-11-02)
+
+### Bug Fixes
+
+* **simosa:** claim a milestone level-up that reaches the server late ([cb19363](https://github.com/totsiaw/proxma-patches/commit/cb1936370e96616753ef83017cf3fc33b2d98e8f))
+
 ## [1.28.0](https://github.com/totsiaw/proxma-patches/compare/1.27.6...1.28.0) (2026-11-02)
 
 ### New Features
