@@ -27,6 +27,8 @@ public final class DailyCheckinWorker extends Worker {
     private static final String TAG = "PROXMA_CLAIM";
     private static final String WORK_IMMEDIATE = "proxma_simosa_now";
     private static final String WORK_MIDNIGHT = "proxma_simosa_midnight";
+    private static final String TAG_FOLLOWUP = "proxma_simosa_followup";
+    private static final long FOLLOWUP_DELAY_MIN = 15;
     private static final int MAX_RETRIES = 6;
     private static final String FGS_CHANNEL_ID = "proxma_fgs";
     private static final int FGS_NOTIF_ID = 1004;
@@ -63,6 +65,7 @@ public final class DailyCheckinWorker extends Worker {
             } catch (Throwable t) {
                 WorkerNotify.log("WORKER_MILESTONE_ERR " + t);
             }
+            scheduleFollowUpIfWanted(context);
             if (MilestoneClaim.hasNews()) {
                 WorkerNotify.notifyStatus(context, "Ladder: latched", "next ~00:05 PKT",
                     "Simosa daily check-in");
@@ -102,6 +105,8 @@ public final class DailyCheckinWorker extends Worker {
             "Ladder: " + LadderClaim.getResult(),
             "next ~00:05 PKT",
             "Simosa daily check-in");
+
+        scheduleFollowUpIfWanted(context);
 
         // Chain tomorrow's midnight run (REPLACE: this run is done, schedule fresh)
         scheduleMidnight(context, ExistingWorkPolicy.REPLACE);
@@ -172,6 +177,32 @@ public final class DailyCheckinWorker extends Worker {
             WorkerNotify.log("WORKER_SCHEDULED");
         } catch (Throwable t) {
             WorkerNotify.log("WORKER_SCHEDULE_ERR " + t);
+        }
+    }
+
+    /**
+     * One more run in a few minutes when the milestone level-up may not have reached
+     * {@code checkin/state} yet. Not unique work: a follow-up schedules the next while it is still
+     * running, and MilestoneClaim caps them per day.
+     */
+    private static void scheduleFollowUpIfWanted(Context context) {
+        try {
+            if (!MilestoneClaim.wantsFollowUp(context)) {
+                return;
+            }
+            Constraints constraints = new Constraints.Builder()
+                .setRequiredNetworkType(NetworkType.CONNECTED)
+                .build();
+            OneTimeWorkRequest followUp = new OneTimeWorkRequest.Builder(DailyCheckinWorker.class)
+                .setConstraints(constraints)
+                .setInitialDelay(FOLLOWUP_DELAY_MIN, TimeUnit.MINUTES)
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 10, TimeUnit.MINUTES)
+                .addTag(TAG_FOLLOWUP)
+                .build();
+            WorkManager.getInstance(context).enqueue(followUp);
+            WorkerNotify.log("WORKER_FOLLOWUP delay=" + FOLLOWUP_DELAY_MIN + "min");
+        } catch (Throwable t) {
+            WorkerNotify.log("WORKER_FOLLOWUP_ERR " + t);
         }
     }
 

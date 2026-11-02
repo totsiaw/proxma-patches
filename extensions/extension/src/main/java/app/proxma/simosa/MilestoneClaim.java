@@ -56,6 +56,7 @@ public final class MilestoneClaim {
     private static final String KEY_DRY_PREFIX = "proxma_milestone_dry_";
     private static final String KEY_OK_PREFIX = "proxma_milestone_ok_";
     private static final String KEY_RECHECK_PREFIX = "proxma_milestone_recheck_";
+    private static final String KEY_FOLLOWUP_PREFIX = "proxma_milestone_followup_";
 
     private static final String STATE_URL = "https://api-prod-dailycheckin.simosa.app/checkin/state";
     private static final String LEVELS_URL = "https://api-prod-dailycheckin.simosa.app/levels";
@@ -69,20 +70,70 @@ public final class MilestoneClaim {
     private static final int TIMEOUT_MS = 15000;
     private static final int CLAIM_TIMEOUT_S = 45;
     private static final int MAX_ATTEMPTS = 3;
+    /** Follow-up runs per day while a level-up may still be landing on the server. */
+    private static final int MAX_FOLLOWUPS = 4;
 
     static String sResult = "n/a";
+    /** {@code progress.current_level} from this run's check-in response, or -1. */
+    private static int sCheckinLevel = -1;
+    private static boolean sFollowUp;
 
     private MilestoneClaim() {}
 
     public static String getResult() { return sResult; }
 
+    /**
+     * True when the worker should run again shortly. The server updates {@code checkin/state}
+     * progress some minutes after a check-in (2026-11-03: L3 "next L4 in 1d" a second after the
+     * day-40 check-in, L4 fifteen minutes later), so a level-up read right after our own
+     * check-in is missed until the next day, when the server no longer pays it.
+     */
+    public static boolean wantsFollowUp(Context context) {
+        if (!sFollowUp) return false;
+        String account = AccountScope.id(context);
+        if (account == null) return false;
+        SharedPreferences prefs = context.getSharedPreferences(PREFS, 0);
+        String key = KEY_FOLLOWUP_PREFIX + account;
+        String[] stored = prefs.getString(key, "").split(":", 2);
+        String today = today();
+        int used = stored.length > 1 && today.equals(stored[0]) ? parseInt(stored[1]) : 0;
+        if (used >= MAX_FOLLOWUPS) {
+            log("MILESTONE_FOLLOWUP_CAP " + used);
+            return false;
+        }
+        prefs.edit().putString(key, today + ":" + (used + 1)).apply();
+        log("MILESTONE_FOLLOWUP " + (used + 1) + "/" + MAX_FOLLOWUPS);
+        return true;
+    }
+
+    /** The check-in response carries progress too; the app's own claim reads it from there. */
+    static void noteCheckin(String body) {
+        sCheckinLevel = -1;
+        try {
+            JSONObject data = new JSONObject(body).optJSONObject("data");
+            JSONObject progress = data != null ? data.optJSONObject("progress") : null;
+            if (progress != null) {
+                sCheckinLevel = progress.optInt("current_level", -1);
+                log("CHECKIN_PROGRESS streak=" + data.optInt("current_streak", -1)
+                    + " level=" + sCheckinLevel + " next=" + progress.optInt("next_level", -1)
+                    + " in=" + progress.optInt("days_to_next_level", -1)
+                    + " max=" + progress.optBoolean("is_max_level", false));
+            }
+        } catch (Throwable t) {
+            log("CHECKIN_PROGRESS_ERR " + t);
+        }
+    }
+
     public static void tryClaimMilestone(Context context, String bearer) {
         sResult = "n/a";
+        sFollowUp = false;
         try {
             tryClaimInner(context, bearer);
         } catch (Throwable t) {
             log("MILESTONE_ERR " + t);
             sResult = "error: " + t.getMessage();
+        } finally {
+            sCheckinLevel = -1;
         }
     }
 
@@ -119,6 +170,14 @@ public final class MilestoneClaim {
         int currentLevel = progress != null ? progress.optInt("current_level", 0) : 0;
         int nextLevel = progress != null ? progress.optInt("next_level", currentLevel + 1) : currentLevel + 1;
         int daysToNext = progress != null ? progress.optInt("days_to_next_level", -1) : -1;
+        boolean maxLevel = progress != null && progress.optBoolean("is_max_level", false);
+        log("MILESTONE_STATE streak=" + data.optInt("current_streak", -1) + " " + state(currentLevel, nextLevel, daysToNext));
+        if (sCheckinLevel > currentLevel) {
+            log("MILESTONE_STATE_STALE state=" + currentLevel + " checkin=" + sCheckinLevel);
+            currentLevel = sCheckinLevel;
+            nextLevel = currentLevel + 1;
+            daysToNext = -1;
+        }
 
         SharedPreferences prefs = context.getSharedPreferences(PREFS, 0);
         Set<Integer> done = loadDone(prefs, account, currentLevel);
@@ -135,6 +194,8 @@ public final class MilestoneClaim {
         }
 
         if (pending.isEmpty()) {
+            // A level-up due today may not show yet: look again in a few minutes.
+            sFollowUp = !maxLevel && daysToNext >= 0 && daysToNext <= 1;
             dryRunOncePerDay(context, prefs, account, bearer, currentLevel, nextLevel, daysToNext);
             return;
         }
@@ -183,6 +244,7 @@ public final class MilestoneClaim {
                 }
             } else {
                 summary.append("L").append(level).append(" will retry: ").append(outcome.detail).append("; ");
+                sFollowUp = true;
                 break;
             }
         }

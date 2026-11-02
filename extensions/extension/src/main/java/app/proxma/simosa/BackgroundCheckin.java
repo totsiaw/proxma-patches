@@ -251,6 +251,7 @@ public final class BackgroundCheckin {
         }
         AutoClaim.latch(context, "checkin");
         log("CHECKIN_OK " + result.code + " " + truncate(result.body));
+        MilestoneClaim.noteCheckin(result.body);
         sCheckin = "done";
         return true;
     }
