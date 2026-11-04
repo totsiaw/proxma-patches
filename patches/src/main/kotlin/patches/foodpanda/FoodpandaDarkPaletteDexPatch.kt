@@ -238,11 +238,24 @@ val foodpandaDarkPaletteDexPatch = bytecodePatch(
     extendWith("extensions/extension.mpe")
 
     execute {
+        // The Bento palette/gradient classes are anchored by their R8-minified names (`Lm7g;` /
+        // `Lq7g;`), verified for 26.38.1. R8 reassigns those short names every release, so on a
+        // version whose palette this mapping doesn't recognise the rewrite cannot run. Rather than
+        // abort the whole patch run (which would also drop the version-agnostic anti-tamper / ads /
+        // premium patches), dark mode degrades to a no-op on an unrecognised build: it logs why and
+        // returns. On 26.38.1 the palette resolves and ~180 fields recover, so behaviour there is
+        // unchanged. Re-deriving the palette anchors for a new release re-enables it.
         val palette = mutableClassDefByOrNull(PALETTE_CLASS)
-        check(palette != null) { "foodpanda: $PALETTE_CLASS not found — palette class moved?" }
+        if (palette == null) {
+            println("foodpanda dark mode: $PALETTE_CLASS not present on this build — skipping dark mode")
+            return@execute
+        }
 
         val ctor = palette.methods.firstOrNull { it.name == "<init>" && it.parameters.size == 1 }
-        check(ctor != null) { "foodpanda: $PALETTE_CLASS.<init>(I)V not found" }
+        if (ctor == null) {
+            println("foodpanda dark mode: $PALETTE_CLASS.<init>(I)V not found on this build — skipping dark mode")
+            return@execute
+        }
 
         // 1) recover field -> light literal from the constructor by straight-line dataflow.
         //    The ctor never stores a literal directly: it does
@@ -308,8 +321,15 @@ val foodpandaDarkPaletteDexPatch = bytecodePatch(
                 }
             }
         }
-        check(fieldToLiteral.size >= 100) {
-            "foodpanda: recovered only ${fieldToLiteral.size} palette fields (expected ~180)"
+        if (fieldToLiteral.size < 100) {
+            // The class named $PALETTE_CLASS on this build is not the 26.38.1 Bento palette (R8
+            // reassigned the short name), so its constructor yields no recognisable colour fields.
+            // Skip dark mode rather than abort the run.
+            println(
+                "foodpanda dark mode: recovered only ${fieldToLiteral.size} palette fields from " +
+                    "$PALETTE_CLASS (expected ~180) — not the Bento palette on this build, skipping dark mode",
+            )
+            return@execute
         }
 
         // 2) fields currently holding a color we want to darken
