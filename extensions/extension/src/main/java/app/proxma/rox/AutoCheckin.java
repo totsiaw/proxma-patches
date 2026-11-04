@@ -45,7 +45,9 @@ public final class AutoCheckin {
     private static final String STREAK_ROUTE = "/dailyStreaksScreen";
     private static final String HOME_ROUTE = "/dashBoardScreen";
 
-    private static final int MAX_TRIES_PER_DAY = 3;
+    // Every session counts, whatever its outcome, so a screen the helper can't read costs at most
+    // five short sessions a day instead of one on every app open.
+    private static final int MAX_TRIES_PER_DAY = 5;
     private static final long TICK_MS = 1500L;
     private static final long SESSION_TIMEOUT_MS = 120_000L;
     private static final long HOME_GRACE_MS = 15_000L;
@@ -108,6 +110,7 @@ public final class AutoCheckin {
             return;
         }
         Log.i(TAG, "START session, earlier tries today " + tries);
+        prefs.edit().putString(KEY_TRY_DAY, today).putInt(KEY_TRIES, tries + 1).apply();
         sSession = new Session(activity);
         sSession.run();
     }
@@ -131,11 +134,17 @@ public final class AutoCheckin {
             if (sSession != null && sSession.activity == activity) sSession.end("paused", false);
         }
 
+        @Override public void onActivityStopped(Activity activity) {
+            if (sSession != null && sSession.activity == activity) sSession.end("stopped", false);
+        }
+
+        @Override public void onActivityDestroyed(Activity activity) {
+            if (sSession != null && sSession.activity == activity) sSession.end("destroyed", false);
+        }
+
         @Override public void onActivityCreated(Activity activity, Bundle state) {}
         @Override public void onActivityStarted(Activity activity) {}
-        @Override public void onActivityStopped(Activity activity) {}
         @Override public void onActivitySaveInstanceState(Activity activity, Bundle state) {}
-        @Override public void onActivityDestroyed(Activity activity) {}
     }
 
     private static final class Node {
@@ -193,7 +202,6 @@ public final class AutoCheckin {
                     end("not signed in or home not reached", false);
                     return;
                 }
-                countTry();
                 end("Daily check-in timed out, will retry next time", true);
                 return;
             }
@@ -275,7 +283,6 @@ public final class AutoCheckin {
             }
             if (now - phaseAt >= BUTTON_WAIT_MS) {
                 Log.w(TAG, "BUTTON not found on streak screen, nodes " + nodes.size());
-                countTry();
                 leaveStreakScreen();
                 end("Couldn't find the Check-in button", true);
             }
@@ -302,7 +309,6 @@ public final class AutoCheckin {
                 return;
             }
             Log.w(TAG, "RESULT button stayed after retry");
-            countTry();
             leaveStreakScreen();
             end("Check-in didn't go through, will retry next time", true);
         }
@@ -321,7 +327,6 @@ public final class AutoCheckin {
                 return;
             }
             Log.w(TAG, "BUTTON could not be tapped");
-            countTry();
             end("Couldn't press the Check-in button", true);
         }
 
@@ -369,13 +374,6 @@ public final class AutoCheckin {
         void setPhase(Phase next, long now) {
             phase = next;
             phaseAt = now;
-        }
-
-        void countTry() {
-            SharedPreferences prefs = activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-            String today = today();
-            int tries = today.equals(prefs.getString(KEY_TRY_DAY, "")) ? prefs.getInt(KEY_TRIES, 0) : 0;
-            prefs.edit().putString(KEY_TRY_DAY, today).putInt(KEY_TRIES, tries + 1).apply();
         }
 
         void markDone() {
