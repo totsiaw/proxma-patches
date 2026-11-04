@@ -40,9 +40,49 @@ import com.android.tools.smali.dexlib2.AccessFlags
  * exercised "allowed" branch. The ChatLimitInfo object is simply never produced, so the paywall is
  * never reached and the chat opens as normal.
  *
- * This is a client-side gate only. If OLX also refuses the chat on its servers once the account is
- * over the limit, that is outside what a patch can change; this removes the in-app block.
+ * SECOND GATE — reply restriction (added after the r2 test build, issue 61 feedback):
+ *
+ *   With only the quota mapper forced, the reporter saw the Elite banner disappear but tapping Chat
+ *   on another smartphone listing still showed "the same error". That is the chat module's
+ *   ReplyRestrictionRepositoryImpl (com.naspers.ragnarok.data.repository.replyRestriction):
+ *
+ *     - isReplyResticted(counterpartJid, itemId): true when Features.isReplyRestriction() is on, the
+ *       account has NO existing conversation with that seller for that item, and the server-sent user
+ *       preference "reply_restriction_user" is set. It then stores the server text
+ *       "reply_restriction_threshold_error" which the caller shows instead of opening the chat
+ *       (n.smali:11401 → AdpvAction J1 error; AdDetailCTAsFragment:3463). Because it only fires for a
+ *       conversation that doesn't exist yet, it matches "works on one ad, error on the next".
+ *     - getNewUserReplyRestricted(): the same gate for the "is_reply_restricted_new_user" preference
+ *       (n.smali:10403, AdDetailCTAsFragment:3511), consulted only after isReplyRestrictedForNewUser.
+ *
+ *   Verified against the 20.07.001 smali: those are the only call sites of both methods, and both
+ *   callers already have an authored "not restricted" path (return false → open chat). Both methods
+ *   are forced to return false. isReplyRestrictedForNewUser is deliberately left alone: it really
+ *   means "no conversation exists yet" and is also read by recommendations and CTA code for other
+ *   purposes.
+ *
+ * Both are client-side gates. If OLX also refuses the message on its servers once the account is
+ * over the limit, that is outside what a patch can change; this removes the in-app blocks.
  */
+
+private const val REPLY_RESTRICTION_REPO =
+    "Lcom/naspers/ragnarok/data/repository/replyRestriction/ReplyRestrictionRepositoryImpl;"
+
+/** ReplyRestrictionRepositoryImpl.isReplyResticted(String, long)Z — sic, the app's own spelling. */
+internal val southAsiaReplyRestrictedFingerprint = Fingerprint(
+    returnType = "Z",
+    accessFlags = listOf(AccessFlags.PUBLIC),
+    parameters = listOf("Ljava/lang/String;", "J"),
+    custom = { m, c -> c.type == REPLY_RESTRICTION_REPO && m.name == "isReplyResticted" },
+)
+
+/** ReplyRestrictionRepositoryImpl.getNewUserReplyRestricted()Z. */
+internal val southAsiaNewUserReplyRestrictedFingerprint = Fingerprint(
+    returnType = "Z",
+    accessFlags = listOf(AccessFlags.PUBLIC),
+    parameters = listOf(),
+    custom = { m, c -> c.type == REPLY_RESTRICTION_REPO && m.name == "getNewUserReplyRestricted" },
+)
 
 /** com.olxgroup.panamera.domain.entitlements.usecase.a — the `Allowed` ChatQuotaResult singleton. */
 private const val ALLOWED_RESULT = "Lcom/olxgroup/panamera/domain/entitlements/usecase/a;"
@@ -69,9 +109,9 @@ internal val southAsiaChatQuotaResultFingerprint = Fingerprint(
 val removeChatLimitSouthAsiaPatch = bytecodePatch(
     name = "Remove chat limit",
     description = "Removes OLX India's \"new chats locked / Upgrade to Elite\" chat limit by making " +
-        "the chat-quota check always report the chat as allowed, so tapping Chat opens the " +
-        "conversation instead of the Elite paywall. The limit is enforced client-side here; if the " +
-        "server also blocks chats over the limit, that part is outside the app.",
+        "the chat-quota and reply-restriction checks always report the chat as allowed, so tapping " +
+        "Chat on a new listing opens the conversation instead of the Elite paywall or the chat " +
+        "limit error. If the server also blocks chats over the limit, that part is outside the app.",
 ) {
     compatibleWith(COMPATIBILITY_OLX_SOUTHASIA)
 
@@ -87,6 +127,32 @@ val removeChatLimitSouthAsiaPatch = bytecodePatch(
         println(
             "OLX India remove chat limit: forced CheckChatQuotaUseCase (e.b) to return Allowed; " +
                 "the chat lock paywall (elite_pitch_chat_locked_for_30_days) is no longer reached",
+        )
+
+        // Both bodies declare .locals >= 2, so v0 is free. Returning false is the "not restricted"
+        // value every caller already handles by opening the chat.
+        southAsiaReplyRestrictedFingerprint.method.addInstructions(
+            0,
+            """
+                const/4 v0, 0x0
+                return v0
+            """.trimIndent(),
+        )
+        println(
+            "OLX India remove chat limit: forced ReplyRestrictionRepositoryImpl.isReplyResticted " +
+                "to false; reply_restriction_threshold_error is no longer shown for new chats",
+        )
+
+        southAsiaNewUserReplyRestrictedFingerprint.method.addInstructions(
+            0,
+            """
+                const/4 v0, 0x0
+                return v0
+            """.trimIndent(),
+        )
+        println(
+            "OLX India remove chat limit: forced ReplyRestrictionRepositoryImpl." +
+                "getNewUserReplyRestricted to false; the new-user reply restriction no longer blocks chats",
         )
     }
 }
