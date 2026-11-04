@@ -20,5 +20,12 @@ internal val COMPATIBILITY_FOODPANDA = Compatibility(
             version = "26.38.1",
             minSdk = 29,
         ),
+        AppTarget(
+            // 26.43.0 base APK manifest: minSdkVersion 29, targetSdk 36 (issue #60).
+            // Patches here are fingerprint-anchored on stable first-party DeliveryHero type
+            // names, so they resolve against this release the same way as 26.38.1.
+            version = "26.43.0",
+            minSdk = 29,
+        ),
     ),
 )
