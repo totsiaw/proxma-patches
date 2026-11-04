@@ -428,6 +428,7 @@ public final class CoinsAutoCollect {
             + "var strong=[],weak=[],done=null,login=null,reward=null,dismiss=null,ds=docs(document,[],0);"
             + "for(var d=0;d<ds.length;d++){var all=ds[d].body?ds[d].body.getElementsByTagName('*'):[];"
             + "for(var k=0;k<all.length;k++){var el=all[k];var tn=el.tagName;if(tn==='SCRIPT'||tn==='STYLE'||tn==='HTML'||tn==='BODY')continue;"
+            + "var tc=el.textContent;if(!tc||tc.length>400)continue;"
             + "var t=lab(el);if(!t||t.length>60)continue;if(!vis(el))continue;"
             + "if(DONE.test(t)&&!done)done=t;"
             + "if(REWARD.test(t)&&!reward)reward=t;"
