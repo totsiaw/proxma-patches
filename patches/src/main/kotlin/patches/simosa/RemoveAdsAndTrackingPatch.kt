@@ -19,7 +19,6 @@ private const val AD_MANAGER_INTERSTITIAL = "Lcom/google/android/gms/ads/admanag
 private const val AD_MANAGER_AD_VIEW = "Lcom/google/android/gms/ads/admanager/AdManagerAdView;"
 private const val BASE_AD_VIEW = "Lcom/google/android/gms/ads/BaseAdView;"
 private const val MOBILE_ADS = "Lcom/google/android/gms/ads/MobileAds;"
-private const val MIXPANEL = "Lcom/mixpanel/android/mpmetrics/MixpanelAPI;"
 private const val MP_MESSAGES = "Lcom/mixpanel/android/mpmetrics/AnalyticsMessages;"
 private const val FB_LOGGER = "Lcom/facebook/appevents/AppEventsLogger;"
 private const val FB_SDK = "Lcom/facebook/FacebookSdk;"
@@ -58,6 +57,18 @@ internal val dailyRewardBannerFactoryFingerprint = Fingerprint(
         "Landroidx/compose/runtime/MutableState;",
         "Landroid/content/Context;",
     ),
+)
+
+// 3.3.6+: Daily Rewards partner web widget (a server-configured WebView promo, e.g. Tamasha) in
+// DailyRewardsTabContent. Its only reader null-checks it and skips the widget, so returning null hides it.
+// Absent on older builds (the stub is best-effort).
+internal val rewardWebViewWidgetFingerprint = Fingerprint(
+    returnType = "Lcom/jazz/jazzworld/data/appmodels/dailyreward/response/RewardWebViewWidget;",
+    parameters = listOf(),
+    custom = { m, c ->
+        c.type == "Lcom/jazz/jazzworld/data/appmodels/dailyreward/response/AdTechConfig;" &&
+            m.name == "getRewardWebViewWidget"
+    },
 )
 
 // ---------------- AD NETWORK (load side) ----------------
@@ -111,16 +122,6 @@ internal val ipifyFetchFingerprint = Fingerprint(
 )
 
 // ---------------- TRACKERS ----------------
-internal val mixpanelTrackJsonFingerprint = Fingerprint(
-    returnType = "V",
-    parameters = listOf("Ljava/lang/String;", "Lorg/json/JSONObject;"),
-    custom = { m, c -> c.type == MIXPANEL && m.name == "track" },
-)
-internal val mixpanelTrackMapFingerprint = Fingerprint(
-    returnType = "V",
-    parameters = listOf("Ljava/lang/String;", "Ljava/util/Map;"),
-    custom = { m, c -> c.type == MIXPANEL && m.name == "trackMap" },
-)
 internal val mixpanelEventsMessageFingerprint = Fingerprint(
     returnType = "V",
     parameters = listOf("Lcom/mixpanel/android/mpmetrics/AnalyticsMessages\$EventDescription;"),
@@ -244,7 +245,7 @@ private val disableAutoCollectionResourcePatch = resourcePatch(
 @Suppress("unused")
 val removeAdsAndTrackingPatch = bytecodePatch(
     name = "Remove ads & tracking",
-    description = "Removes every ad (interstitial, banner, daily-reward) and every tracker " +
+    description = "Removes every ad (interstitial, banner, daily-reward, the Daily Rewards partner widget) and every tracker " +
         "(Mixpanel, Firebase, Facebook, AppsFlyer) — app events, network sends, ad-SDK requests " +
         "(Google Ads / AppLovin / AnyMind / Prebid), SDK auto-collection, and the ipify IP leak. " +
         "The app then phones home only to its own Jazz API.",
@@ -272,9 +273,10 @@ val removeAdsAndTrackingPatch = bytecodePatch(
         }
 
         // return-void: tracker send/init + ad-network load/init
+        // MixpanelAPI.track/trackMap are not stubbed: every event they record goes through
+        // AnalyticsMessages.eventsMessage, which is. Leaving MixpanelAPI untouched keeps the Manager-safe
+        // selection at 13 modified classes now that the 3.3.6 partner widget needs one more.
         listOf(
-            mixpanelTrackJsonFingerprint,
-            mixpanelTrackMapFingerprint,
             mixpanelEventsMessageFingerprint,
             mixpanelPeopleMessageFingerprint,
             mixpanelPostToServerFingerprint,
@@ -302,10 +304,12 @@ val removeAdsAndTrackingPatch = bytecodePatch(
             facebookAdIdGetterFingerprint,
         ).forEach { stub(it, returnFalse) }
 
-        // return null: interstitial holders (show sites null-check these)
+        // return null: interstitial holders (show sites null-check these) + the 3.3.6 Daily Rewards
+        // partner web widget (its reader null-checks it and leaves the widget out)
         listOf(
             interstitialHolderAFingerprint,
             interstitialHolderBFingerprint,
+            rewardWebViewWidgetFingerprint,
         ).forEach { stub(it, returnNull) }
 
         // daily-reward banner factory: return a bare AdManagerAdView (no size/ad-unit/load) -> renders nothing.
