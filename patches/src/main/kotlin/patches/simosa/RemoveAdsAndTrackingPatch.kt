@@ -329,7 +329,9 @@ val removeAdsAndTrackingPatch = bytecodePatch(
             """.trimIndent(),
         )
 
-        // 3.3.6+: the banner, interstitial and native ads moved to the next-gen ads SDK.
-        stubNextGenAds(NEXT_GEN_ADS)
+        // 3.3.6+: the banner, interstitial and native ads moved to the next-gen ads SDK, and so did the
+        // Daily Rewards check-in rewarded ad, which this patch must remove on its own (Manager users
+        // can't use "Remove daily check-in ads").
+        stubNextGenAds(NEXT_GEN_ADS + NEXT_GEN_REWARDED_ADS)
     }
 }
