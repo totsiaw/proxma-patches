@@ -1,6 +1,6 @@
 {
   "NOTE": "Do NOT manually edit this file. This file is automatically updated when semantic release (release.yml) runs. Manually editing this file can break your releases and break third party tools that use this file.",
-  "version": "1.27.4",
+  "version": "1.28.1",
   "patches": [
     {
       "name": "Auto check-in & claim daily reward",
@@ -36,8 +36,34 @@
       "options": []
     },
     {
+      "name": "Auto check-in daily streak",
+      "description": "Presses the Daily Streak Check-in button for you when the app is open, once a day. It runs the app's own check-in, so it needs you to be signed in and to open the app each day.",
+      "default": true,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "com.jazz.rox",
+          "name": "ROX",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#E4002B",
+          "signatures": [],
+          "targets": [
+            {
+              "version": "3.0.13",
+              "versionCodes": null,
+              "isExperimental": false,
+              "minSdk": 28,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
       "name": "Auto-claim daily rewards",
-      "description": "Claims the daily streak MBs and plays the Answer & Win quiz automatically, using the answer key the app already receives, then claims the quiz MBs. Runs at about 00:05 PKT, a few seconds after the app is opened, and every 6 hours, retrying failures until late evening. A notification shows each result. Swiping the app away from recents force-stops it and cancels the schedule until it is opened again.",
+      "description": "Claims the daily streak MBs and plays the Answer & Win quiz automatically, using the answer key the app already receives, then claims the quiz MBs. Runs at 00:05 PKT, shortly after the app is opened, and every 6 hours, retrying failures until late evening. The 00:05 and app-open runs show a small \"Claiming daily rewards\" notification for about a minute, which keeps the phone's battery manager from cutting them off; allow \"Alarms & reminders\" for My Telenor so the 00:05 run can do that too. A notification shows each result. Swiping the app away from recents force-stops it and cancels the schedule until it is opened again.",
       "default": true,
       "dependencies": [
         "ResourcePatch"
@@ -67,7 +93,9 @@
       "name": "Background daily check-in worker",
       "description": "Runs the Simosa daily check-in from a 24-hour WorkManager job that this patch adds to the app, with two-tier token auth, stale-token retry, a per-account day latch and a status notification.",
       "default": true,
-      "dependencies": [],
+      "dependencies": [
+        "ResourcePatch"
+      ],
       "compatiblePackages": [
         {
           "packageName": "com.jazz.jazzworld",
@@ -727,6 +755,32 @@
               "versionCodes": null,
               "isExperimental": false,
               "minSdk": 23,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
+      "name": "Remove ads",
+      "description": "Stops banner and full-screen ads from loading. Rewarded video ads are left alone, so the watch-an-ad-for-points option keeps working.",
+      "default": true,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "com.jazz.rox",
+          "name": "ROX",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#E4002B",
+          "signatures": [],
+          "targets": [
+            {
+              "version": "3.0.13",
+              "versionCodes": null,
+              "isExperimental": false,
+              "minSdk": 28,
               "description": null
             }
           ]

@@ -28,13 +28,22 @@ _Supported version(s): 3.3.5, 3.3.4.2_
 | **Remove ads & tracking** | Removes every ad (interstitial, banner, daily-reward) and every tracker (Mixpanel, Firebase, Facebook, AppsFlyer) — app events, network sends, ad-SDK requests (Google Ads / AppLovin / AnyMind / Prebid), SDK auto-collection, and the ipify IP leak. The app then phones home only to its own Jazz API. |
 | **Remove daily check-in ads** | Removes the SocialPlus daily check-in / in-feed ads (FeedAdsManager banner + native loaders) and the day-10/20/30 milestone-claim RewardedAd (the award is still granted, just with no ad). Separate from "Remove ads & tracking" to keep that patch Morphe-Manager-safe; enable this one when patching with the desktop CLI. |
 
+### ROX (`com.jazz.rox`)
+
+_Supported version(s): 3.0.13_
+
+| Patch | Description |
+|-------|-------------|
+| **Auto check-in daily streak** | Presses the Daily Streak Check-in button for you when the app is open, once a day. It runs the app's own check-in, so it needs you to be signed in and to open the app each day. |
+| **Remove ads** | Stops banner and full-screen ads from loading. Rewarded video ads are left alone, so the watch-an-ad-for-points option keeps working. |
+
 ### My Telenor (`com.telenor.pakistan.mytelenor`)
 
 _Supported version(s): 4.2.63_
 
 | Patch | Description |
 |-------|-------------|
-| **Auto-claim daily rewards** | Claims the daily streak MBs and plays the Answer & Win quiz automatically, using the answer key the app already receives, then claims the quiz MBs. Runs at about 00:05 PKT, a few seconds after the app is opened, and every 6 hours, retrying failures until late evening. A notification shows each result. Swiping the app away from recents force-stops it and cancels the schedule until it is opened again. |
+| **Auto-claim daily rewards** | Claims the daily streak MBs and plays the Answer & Win quiz automatically, using the answer key the app already receives, then claims the quiz MBs. Runs at 00:05 PKT, shortly after the app is opened, and every 6 hours, retrying failures until late evening. The 00:05 and app-open runs show a small "Claiming daily rewards" notification for about a minute, which keeps the phone's battery manager from cutting them off; allow "Alarms & reminders" for My Telenor so the 00:05 run can do that too. A notification shows each result. Swiping the app away from recents force-stops it and cancels the schedule until it is opened again. |
 | **Block trackers** | Stops the Insider, TikTok Business SDK and Mixpanel Session Replay trackers from initializing (event/attribution/session-replay tracking never starts). Leaves AWS Amplify, Firebase core/RemoteConfig/FCM and Google Ads init untouched so app data, push and the remote ad-config the ads patch relies on keep working. |
 | **Block trackers (manifest flags)** | Disables Firebase Analytics + Google advertiser-id auto-collection and the Facebook SDK's auto app-events / advertiser-id / auto-init via AndroidManifest <meta-data> flags — the SDK-side auto-collection that no bytecode init-stub can reach. Leaves Firebase core (FCM push, RemoteConfig) and the Facebook ContentProvider intact. Separate from the bytecode Block trackers patch so you can pick either or both. |
 | **Bypass device validation** | Neutralizes the client-side device-validation gate (anti-root / anti-emulator / anti-Frida / anti-Xposed / anti-tamper battery) that shows a "Device validation failed" toast and kills the app via finishAffinity() on a rooted, emulated or re-signed build. Redirects the single failure callback to the success path so all ~16 checks report as passed and the app keeps running pre- and post-login. |

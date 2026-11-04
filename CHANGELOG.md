@@ -1,3 +1,37 @@
+## [1.28.1](https://github.com/totsiaw/proxma-patches/compare/1.28.0...1.28.1) (2026-11-02)
+
+### Bug Fixes
+
+* **simosa:** claim a milestone level-up that reaches the server late ([cb19363](https://github.com/totsiaw/proxma-patches/commit/cb1936370e96616753ef83017cf3fc33b2d98e8f))
+
+## [1.28.0](https://github.com/totsiaw/proxma-patches/compare/1.27.6...1.28.0) (2026-11-02)
+
+### New Features
+
+* **rox:** add auto check-in and banner/interstitial ad removal for ROX 3.0.13 ([c70bb02](https://github.com/totsiaw/proxma-patches/commit/c70bb029ac46c22ac25c49ee92693c94c788bc7d))
+
+## [1.27.6](https://github.com/totsiaw/proxma-patches/compare/1.27.5...1.27.6) (2026-11-02)
+
+### Bug Fixes
+
+* **simosa:** load the stored login in a process with no Activity ([41ab67b](https://github.com/totsiaw/proxma-patches/commit/41ab67bcbfdfc1ba3b36d738f3619b1f296bde22))
+* **simosa:** never auto-claim a paid Daily Rewards rung ([fc3926e](https://github.com/totsiaw/proxma-patches/commit/fc3926e32ee60b3dbd5cadbc0bf38926e67abc0b))
+* **simosa:** post the worker status on every retry ([26f8b81](https://github.com/totsiaw/proxma-patches/commit/26f8b814b516f4ed462bc234e88a73f28615214e))
+* **simosa:** read milestone dry-run headers from the request ([69e87d9](https://github.com/totsiaw/proxma-patches/commit/69e87d968cf6cc8891c93ef8165658b332df0092))
+* **simosa:** renew the Daily Rewards session without the app being opened ([0c41e85](https://github.com/totsiaw/proxma-patches/commit/0c41e85c5d9ed3ddcd229281cf5f56d8ae7eff22))
+* **simosa:** retry a milestone level refused earlier today ([c8c6b66](https://github.com/totsiaw/proxma-patches/commit/c8c6b664bbb27d55d3748b89237532bbef4a8cf4))
+* **simosa:** run the app's status check before trusting a non-free ladder ([c276f85](https://github.com/totsiaw/proxma-patches/commit/c276f85cdd806943929c4728d4a16413263dfa34))
+* **simosa:** run the background check-in as a dataSync foreground service ([c20d350](https://github.com/totsiaw/proxma-patches/commit/c20d350ea1336d463a6b5b1b17dfc1d2025f6b99))
+* **simosa:** stop giving up milestone levels over a missing login ([153cd26](https://github.com/totsiaw/proxma-patches/commit/153cd269c726c9904ae071f0325903256169fc40)), closes [#65](https://github.com/totsiaw/proxma-patches/issues/65)
+* **simosa:** trace the claim flow and never decide from a saved ladder list ([085ff69](https://github.com/totsiaw/proxma-patches/commit/085ff69820ee0982d488cbf1617c61a4c038f29f))
+
+## [1.27.5](https://github.com/totsiaw/proxma-patches/compare/1.27.4...1.27.5) (2026-10-31)
+
+### Bug Fixes
+
+* **mytelenor:** make background runs work without opening the app ([3f16fe8](https://github.com/totsiaw/proxma-patches/commit/3f16fe8f8bf9937d998ce97a4ad7594dd3428b8d))
+* **mytelenor:** run the daily claims in a foreground service so ColorOS doesn't cut them off ([fb77f35](https://github.com/totsiaw/proxma-patches/commit/fb77f35fb4395e868b9be6de5f9cb00053fb7832))
+
 ## [1.27.4](https://github.com/totsiaw/proxma-patches/compare/1.27.3...1.27.4) (2026-10-28)
 
 ### Bug Fixes
