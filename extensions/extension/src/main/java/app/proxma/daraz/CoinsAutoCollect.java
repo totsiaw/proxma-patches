@@ -25,6 +25,7 @@ import java.util.Date;
 import java.util.Locale;
 import java.util.Map;
 import java.util.WeakHashMap;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -34,7 +35,8 @@ import java.util.regex.Pattern;
  * web container and presses the page's own Check-in / Collect button. The page sends its own
  * request and shows its own result.
  *
- * The first time the user opens the Coins page the patch remembers its address. After that, once
+ * The first time the user opens the Coins page (and it shows its Check-in button or its
+ * already-collected state) the patch remembers its address. After that, once
  * a day when Daraz reaches its home screen, the patch opens that page itself, collects, and goes
  * back to home.
  */
@@ -61,8 +63,21 @@ public final class CoinsAutoCollect {
     private static final long RESULT_TIMEOUT_MS = 12_000L;
     private static final long CLOSE_DELAY_MS = 2_500L;
 
+    private static final String KEY_MISSES = "misses";
+    private static final String KEY_MISS_DAY = "miss_day";
+    private static final int MAX_MISSES = 3;
+
     private static final Pattern COINS_URL = Pattern.compile(
         "(^|[/_\\-=.])(my-)?(daraz|laz)?coins?([/_\\-?&.#]|$)");
+    private static final Pattern URL_PARTS = Pattern.compile(
+        "^https?://([^/?#:]+)(:\\d+)?([^?#]*)(\\?[^#]*)?(#.*)?$");
+    // Product, search, shop and cart pages can carry "coin" in their name or search words
+    // (a coin purse, a search for "coins"); none of them is the Coins page.
+    private static final Pattern NOT_COINS_PAGE = Pattern.compile(
+        "^/(products?|catalog|shop|search|cart|checkout|orders?|wishlist|review|qa)(/|$)|-i\\d+(-s\\d+)?\\.html");
+    private static final Pattern SEARCH_PARAM = Pattern.compile(
+        "^(q|query|keyword|keywords|search|searchtext|k|from_search|spm|scm|clickTrackInfo)$",
+        Pattern.CASE_INSENSITIVE);
 
     private static volatile boolean sRegistered = false;
     private static long sAutoOpenAt = 0L;
@@ -94,11 +109,6 @@ public final class CoinsAutoCollect {
             View view = (View) webView;
             Context context = view.getContext();
             if (context == null) return;
-            SharedPreferences prefs = prefs(context);
-            if (!url.equals(prefs.getString(KEY_URL, ""))) {
-                prefs.edit().putString(KEY_URL, url).apply();
-                Log.i(TAG, "PAGE learned coins url " + url);
-            }
             Session running = SESSIONS.get(webView);
             if (running != null && !running.finished) {
                 Log.i(TAG, "PAGE session already running");
@@ -106,8 +116,8 @@ public final class CoinsAutoCollect {
             }
             boolean auto = sAutoOpenAt != 0L && SystemClock.uptimeMillis() - sAutoOpenAt < AUTO_OPEN_WINDOW_MS;
             if (auto) sAutoOpenAt = 0L;
-            Log.i(TAG, "PAGE coins page loaded, auto " + auto + " url " + url);
-            Session session = new Session(view, auto);
+            Log.i(TAG, "PAGE coins page candidate loaded, auto " + auto + " url " + url);
+            Session session = new Session(view, url, auto);
             SESSIONS.put(webView, session);
             session.handler.postDelayed(session, TICK_MS);
         } catch (Throwable t) {
@@ -235,6 +245,7 @@ public final class CoinsAutoCollect {
     private static final class Session implements Runnable {
         final WeakReference<View> viewRef;
         final Context appContext;
+        final String url;
         final boolean auto;
         final Handler handler = new Handler(Looper.getMainLooper());
         final long startedAt = SystemClock.uptimeMillis();
@@ -245,10 +256,45 @@ public final class CoinsAutoCollect {
         boolean finished = false;
         String lastStatus = "";
 
-        Session(View view, boolean auto) {
+        Session(View view, String url, boolean auto) {
             this.viewRef = new WeakReference<>(view);
             this.appContext = view.getContext().getApplicationContext();
+            this.url = url;
             this.auto = auto;
+        }
+
+        /** Remember this page as the Coins page only once its content proved it is one. */
+        void learn() {
+            SharedPreferences prefs = prefs(appContext);
+            SharedPreferences.Editor edit = prefs.edit().putInt(KEY_MISSES, 0);
+            if (!url.equals(prefs.getString(KEY_URL, ""))) {
+                edit.putString(KEY_URL, url);
+                Log.i(TAG, "LEARN coins url " + url);
+            }
+            edit.apply();
+        }
+
+        /** An auto-opened page showed no Check-in button; forget the address after a few days of that. */
+        void missed() {
+            SharedPreferences prefs = prefs(appContext);
+            String today = today();
+            if (today.equals(prefs.getString(KEY_MISS_DAY, ""))) {
+                Log.w(TAG, "MISS again today, not counted");
+                return;
+            }
+            prefs.edit().putString(KEY_MISS_DAY, today).apply();
+            int misses = prefs.getInt(KEY_MISSES, 0) + 1;
+            if (misses >= MAX_MISSES) {
+                prefs.edit().remove(KEY_URL).remove(KEY_HINT_SHOWN).putInt(KEY_MISSES, 0).apply();
+                Log.w(TAG, "MISS forgot coins url after " + misses + " misses");
+            } else {
+                prefs.edit().putInt(KEY_MISSES, misses).apply();
+                Log.w(TAG, "MISS auto open found no button, misses " + misses);
+            }
+        }
+
+        boolean isLearnedPage() {
+            return url.equals(prefs(appContext).getString(KEY_URL, ""));
         }
 
         @Override public void run() {
@@ -271,6 +317,7 @@ public final class CoinsAutoCollect {
             long now = SystemClock.uptimeMillis();
             if (phase == Phase.FIND && now - phaseAt > FIND_TIMEOUT_MS) {
                 Log.w(TAG, "FIND timed out, last status " + lastStatus);
+                if (auto) missed();
                 end(auto ? "Couldn't find the coins Check-in button" : null, auto, auto);
                 return;
             }
@@ -307,22 +354,26 @@ public final class CoinsAutoCollect {
                 switch (kind) {
                     case "clicked":
                         Log.i(TAG, "FIND pressed button, label " + label);
+                        learn();
                         phase = Phase.RESULT;
                         phaseAt = now;
                         return;
                     case "done":
                         Log.i(TAG, "FIND page says already collected, text " + label);
+                        learn();
                         markDone();
                         end("Coins already collected today", true, true);
                         return;
                     case "disabled":
                         Log.i(TAG, "FIND button disabled, treating as collected, label " + label);
+                        learn();
                         markDone();
                         end("Coins already collected today", true, true);
                         return;
                     case "login":
-                        Log.i(TAG, "FIND page asks to sign in, label " + label);
-                        end("Sign in to Daraz first to collect coins", true, true);
+                        boolean known = auto || isLearnedPage();
+                        Log.i(TAG, "FIND page asks to sign in, known coins page " + known + ", label " + label);
+                        end(known ? "Sign in to Daraz first to collect coins" : null, known, known);
                         return;
                     default:
                         return; // "none": page still rendering, keep looking
@@ -465,20 +516,42 @@ public final class CoinsAutoCollect {
         }
     }
 
+    /**
+     * A Daraz page whose path, fragment or a non-search query value names coins. Product, search,
+     * shop and cart pages are never candidates, and search words are ignored, so a search for
+     * "coins" or a "coin purse" product can't pass. A candidate only becomes the remembered Coins
+     * page once the page itself shows the Check-in button or the already-collected state.
+     */
     static boolean isCoinsUrl(String url) {
-        String lower;
-        try {
-            lower = URLDecoder.decode(url, "UTF-8").toLowerCase(Locale.US);
-        } catch (Throwable t) {
-            lower = url.toLowerCase(Locale.US);
+        String lower = url.toLowerCase(Locale.US);
+        Matcher parts = URL_PARTS.matcher(lower);
+        if (!parts.matches()) return false;
+        String host = parts.group(1);
+        if (!(host.contains("daraz") || host.contains("lazada"))) return false;
+        if (decode(lower).contains("login") || decode(lower).contains("signin")) return false;
+        String path = decode(parts.group(3) == null ? "" : parts.group(3));
+        if (NOT_COINS_PAGE.matcher(path).find()) return false;
+        StringBuilder text = new StringBuilder(path);
+        String query = parts.group(4);
+        if (query != null && query.length() > 1) {
+            for (String pair : query.substring(1).split("&")) {
+                int eq = pair.indexOf('=');
+                String name = decode(eq < 0 ? pair : pair.substring(0, eq));
+                if (SEARCH_PARAM.matcher(name).matches()) continue;
+                text.append('&').append(name);
+                if (eq >= 0) text.append('=').append(decode(pair.substring(eq + 1)));
+            }
         }
-        if (!lower.startsWith("http")) return false;
-        Uri uri = Uri.parse(lower);
-        String host = uri.getHost();
-        if (host == null || !(host.contains("daraz") || host.contains("lazada"))) return false;
-        if (lower.contains("login") || lower.contains("signin")) return false;
-        int hostEnd = lower.indexOf(host) + host.length();
-        return COINS_URL.matcher(lower.substring(hostEnd)).find();
+        if (parts.group(5) != null) text.append(decode(parts.group(5)));
+        return COINS_URL.matcher(text).find();
+    }
+
+    private static String decode(String s) {
+        try {
+            return URLDecoder.decode(s, "UTF-8");
+        } catch (Throwable t) {
+            return s;
+        }
     }
 
     private static String unquote(String value) {
