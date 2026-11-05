@@ -9,6 +9,14 @@ import com.android.tools.smali.dexlib2.AccessFlags
 private const val COINS = "Lapp/proxma/daraz/CoinsAutoCollect;"
 private const val APPLICATION = "Lpt/rocket/app/LazadaApplication;"
 
+// Daraz's opening full-screen ad ("splash") is driven by Lazada's splash SDK. Both the cold-boot
+// and the async paths ask this inspector for an ad "material" to show; getAvailableMaterialStartup
+// is the shared entry and it in turn calls getAvailableMaterial(Z). Both are declared @Nullable and
+// every caller already handles null (no material = no ad), so returning null here makes the app open
+// straight to its home screen with no opening ad, and sidesteps the ad freeze some devices hit.
+private const val SPLASH_INSPECTOR = "Lcom/lazada/android/splash/manager/AvailableMaterialInspectorImpl;"
+private const val MATERIAL_VO = "Lcom/lazada/android/splash/db/MaterialVO;"
+
 // WindVane is Alibaba's web container. Daraz loads every server page (Daraz Coins included) in it,
 // through the UC core when available and the system WebView otherwise. Both client classes keep
 // their real names in 9.41.1, and Daraz's own client calls super.onPageFinished first.
@@ -38,12 +46,31 @@ internal val systemWebClientPageFinishedFingerprint = Fingerprint(
     custom = { method, classDef -> classDef.type == SYSTEM_WEB_CLIENT && method.name == "onPageFinished" },
 )
 
+internal val splashAvailableMaterialFingerprint = Fingerprint(
+    returnType = MATERIAL_VO,
+    accessFlags = listOf(AccessFlags.PUBLIC, AccessFlags.STATIC),
+    parameters = listOf("Z"),
+    custom = { method, classDef -> classDef.type == SPLASH_INSPECTOR && method.name == "getAvailableMaterial" },
+)
+
+// getAvailableMaterialStartup is declared-synchronized; Morphe matches accessFlags exactly, so the
+// synchronized flag must be listed or the fingerprint resolves to nothing. This hook is defence in
+// depth: getAvailableMaterial(Z) above already nulls every path, but this stops the coldboot cache
+// from ever holding a material too.
+internal val splashStartupMaterialFingerprint = Fingerprint(
+    returnType = MATERIAL_VO,
+    accessFlags = listOf(AccessFlags.PUBLIC, AccessFlags.STATIC, AccessFlags.DECLARED_SYNCHRONIZED),
+    parameters = listOf("Z"),
+    custom = { method, classDef -> classDef.type == SPLASH_INSPECTOR && method.name == "getAvailableMaterialStartup" },
+)
+
 @Suppress("unused")
 val autoCollectCoinsPatch = bytecodePatch(
     name = "Auto collect Daraz Coins",
     description = "Presses the daily Check-in / Collect button on the Daraz Coins page for you. " +
         "Open the Coins page once so the patch learns it; after that it opens the page by itself " +
-        "once a day when you open Daraz, collects, and goes back. Needs you to be signed in.",
+        "once a day when you open Daraz, collects, and goes back. Needs you to be signed in. " +
+        "It also skips Daraz's opening full-screen ad so the app goes straight to the home screen.",
 ) {
     compatibleWith(COMPATIBILITY_DARAZ)
     extendWith("extensions/extension.mpe")
@@ -74,5 +101,16 @@ val autoCollectCoinsPatch = bytecodePatch(
         if (hooked == 0) {
             throw PatchException("Neither WindVane web client onPageFinished was found to hook")
         }
+
+        // Skip Daraz's opening full-screen ad: make the splash inspector report no ad to show.
+        // Non-fatal, so the Coins feature still applies if the splash SDK ever moves.
+        val noMaterial = """
+            const/4 v0, 0x0
+            return-object v0
+        """
+        runCatching { splashStartupMaterialFingerprint.method }.getOrNull()
+            ?.addInstructions(0, noMaterial)
+        runCatching { splashAvailableMaterialFingerprint.method }.getOrNull()
+            ?.addInstructions(0, noMaterial)
     }
 }
