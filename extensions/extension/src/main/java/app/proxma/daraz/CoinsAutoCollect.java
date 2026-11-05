@@ -94,6 +94,9 @@ public final class CoinsAutoCollect {
         try {
             if (app == null || sRegistered) return;
             sRegistered = true;
+            // Make the app report its original signing certificate so Daraz's mtop request signing
+            // keeps working and the session survives patching. Best-effort; never fatal.
+            SignatureSpoof.install(app);
             app.registerActivityLifecycleCallbacks(new Callbacks());
             Log.i(TAG, "ENTRY registered");
         } catch (Throwable t) {
