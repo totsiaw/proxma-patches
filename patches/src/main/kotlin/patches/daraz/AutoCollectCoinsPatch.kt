@@ -9,13 +9,17 @@ import com.android.tools.smali.dexlib2.AccessFlags
 private const val COINS = "Lapp/proxma/daraz/CoinsAutoCollect;"
 private const val APPLICATION = "Lpt/rocket/app/LazadaApplication;"
 
-// Daraz's opening full-screen ad ("splash") is driven by Lazada's splash SDK. Both the cold-boot
-// and the async paths ask this inspector for an ad "material" to show; getAvailableMaterialStartup
-// is the shared entry and it in turn calls getAvailableMaterial(Z). Both are declared @Nullable and
-// every caller already handles null (no material = no ad), so returning null here makes the app open
-// straight to its home screen with no opening ad, and sidesteps the ad freeze some devices hit.
-private const val SPLASH_INSPECTOR = "Lcom/lazada/android/splash/manager/AvailableMaterialInspectorImpl;"
+// Daraz's opening full-screen ad ("splash") is driven by Lazada's splash SDK. SplashPresenterImpl
+// renders it and runs the 3-2-1 countdown; on some devices that countdown stalls at 1s and never
+// dismisses, trapping the user on the ad. The presenter already has its own "skip the splash" path
+// (when onCreateSplashUI decides to skip, it calls the host listener's onSplashStop() and returns
+// immediately, before ever drawing the ad). We take that same path unconditionally at the top of
+// onCreateSplashUI, so the splash is dismissed through the app's own callback and the app goes
+// straight to home. This uses the real dismiss path — unlike nulling the ad "material", which left a
+// caller dereferencing a null and crash-looped the app on launch.
+private const val SPLASH_PRESENTER = "Lcom/lazada/android/splash/ui/SplashPresenterImpl;"
 private const val MATERIAL_VO = "Lcom/lazada/android/splash/db/MaterialVO;"
+private const val ON_SPLASH_LISTENER = "Lcom/lazada/android/splash/ui/ISplashPresenter\$OnSplashListener;"
 
 // WindVane is Alibaba's web container. Daraz loads every server page (Daraz Coins included) in it,
 // through the UC core when available and the system WebView otherwise. Both client classes keep
@@ -46,22 +50,14 @@ internal val systemWebClientPageFinishedFingerprint = Fingerprint(
     custom = { method, classDef -> classDef.type == SYSTEM_WEB_CLIENT && method.name == "onPageFinished" },
 )
 
-internal val splashAvailableMaterialFingerprint = Fingerprint(
-    returnType = MATERIAL_VO,
-    accessFlags = listOf(AccessFlags.PUBLIC, AccessFlags.STATIC),
-    parameters = listOf("Z"),
-    custom = { method, classDef -> classDef.type == SPLASH_INSPECTOR && method.name == "getAvailableMaterial" },
-)
-
-// getAvailableMaterialStartup is declared-synchronized; Morphe matches accessFlags exactly, so the
-// synchronized flag must be listed or the fingerprint resolves to nothing. This hook is defence in
-// depth: getAvailableMaterial(Z) above already nulls every path, but this stops the coldboot cache
-// from ever holding a material too.
-internal val splashStartupMaterialFingerprint = Fingerprint(
-    returnType = MATERIAL_VO,
-    accessFlags = listOf(AccessFlags.PUBLIC, AccessFlags.STATIC, AccessFlags.DECLARED_SYNCHRONIZED),
-    parameters = listOf("Z"),
-    custom = { method, classDef -> classDef.type == SPLASH_INSPECTOR && method.name == "getAvailableMaterialStartup" },
+// onCreateSplashUI(isColdBoot, activity, material, listener) is the single entry that builds and
+// shows the opening ad. Its 4th parameter is the host's OnSplashListener; calling onSplashStop() on
+// it is exactly how the presenter's own skip branch tells the host "splash done, carry on to home".
+internal val splashCreateUiFingerprint = Fingerprint(
+    returnType = "V",
+    accessFlags = listOf(AccessFlags.PUBLIC),
+    parameters = listOf("Z", "Landroid/app/Activity;", MATERIAL_VO, ON_SPLASH_LISTENER),
+    custom = { method, classDef -> classDef.type == SPLASH_PRESENTER && method.name == "onCreateSplashUI" },
 )
 
 @Suppress("unused")
@@ -102,15 +98,19 @@ val autoCollectCoinsPatch = bytecodePatch(
             throw PatchException("Neither WindVane web client onPageFinished was found to hook")
         }
 
-        // Skip Daraz's opening full-screen ad: make the splash inspector report no ad to show.
-        // Non-fatal, so the Coins feature still applies if the splash SDK ever moves.
-        val noMaterial = """
-            const/4 v0, 0x0
-            return-object v0
-        """
-        runCatching { splashStartupMaterialFingerprint.method }.getOrNull()
-            ?.addInstructions(0, noMaterial)
-        runCatching { splashAvailableMaterialFingerprint.method }.getOrNull()
-            ?.addInstructions(0, noMaterial)
+        // Skip Daraz's opening full-screen ad by dismissing the splash through the host's own
+        // OnSplashListener before the ad is ever drawn — the app's legitimate skip path. Guard the
+        // listener for null like the app does. Non-fatal: if the splash SDK ever moves, the Coins
+        // feature still applies.
+        runCatching { splashCreateUiFingerprint.method }.getOrNull()?.addInstructions(
+            0,
+            """
+                if-eqz p4, :proxma_continue
+                invoke-interface {p4}, $ON_SPLASH_LISTENER->onSplashStop()V
+                return-void
+                :proxma_continue
+                nop
+            """,
+        )
     }
 }
