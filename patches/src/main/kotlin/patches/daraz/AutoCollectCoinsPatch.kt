@@ -66,7 +66,8 @@ val autoCollectCoinsPatch = bytecodePatch(
     description = "Presses the daily Check-in / Collect button on the Daraz Coins page for you. " +
         "Open the Coins page once so the patch learns it; after that it opens the page by itself " +
         "once a day when you open Daraz, collects, and goes back. Needs you to be signed in. " +
-        "It also skips Daraz's opening full-screen ad so the app goes straight to the home screen.",
+        "It also skips Daraz's opening full-screen ad so the app goes straight to the home screen, " +
+        "and makes the app present its original signing certificate so your Daraz login keeps working.",
 ) {
     compatibleWith(COMPATIBILITY_DARAZ)
     extendWith("extensions/extension.mpe")
