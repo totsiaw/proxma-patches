@@ -60,11 +60,24 @@ public final class SignatureSpoof {
             final String pkg = context.getPackageName();
             final Signature origSig = new Signature(Base64.decode(ORIG_CERT_B64, Base64.DEFAULT));
 
-            Class<?> atClass = Class.forName("android.app.ActivityThread");
-            Object currentAt = atClass.getMethod("currentActivityThread").invoke(null);
-            Field pmField = atClass.getDeclaredField("sPackageManager");
-            pmField.setAccessible(true);
-            Object realPm = pmField.get(currentAt);
+            // Only wrap the app's OWN cached ApplicationPackageManager.mPM — the binder reference
+            // that context.getPackageManager().getPackageInfo(...) travels through. Daraz's mtop /
+            // SecurityGuard signing reads the app signature exactly that way, so this is enough to
+            // hand it the original certificate.
+            //
+            // We deliberately do NOT swap the process-global ActivityThread.sPackageManager here.
+            // That global field is used by framework-internal callers on hot cold-start paths
+            // (resource loading, ContentProviders, component resolution); proxying every one of
+            // those binder calls through our reflective InvocationHandler is what stalled the app on
+            // launch before. Scoping the hook to our own PackageManager keeps start-up untouched.
+            Object apm = context.getPackageManager();
+            Field mPmField = findField(apm.getClass(), "mPM");
+            if (mPmField == null) {
+                Log.w(TAG, "SPOOF mPM field not found");
+                return;
+            }
+            mPmField.setAccessible(true);
+            Object realPm = mPmField.get(apm);
             if (realPm == null) {
                 Log.w(TAG, "SPOOF no real package manager");
                 return;
@@ -82,23 +95,24 @@ public final class SignatureSpoof {
                     new Class<?>[]{ipmClass},
                     new PmHandler(realPm, pkg, origSig));
 
-            pmField.set(currentAt, proxy);
-
-            // The context already holds a cached ApplicationPackageManager whose mPM points at the
-            // real binder; point it at the proxy too so getPackageManager() calls go through us.
-            try {
-                Object apm = context.getPackageManager();
-                Field mPmField = apm.getClass().getDeclaredField("mPM");
-                mPmField.setAccessible(true);
-                mPmField.set(apm, proxy);
-            } catch (Throwable t) {
-                Log.w(TAG, "SPOOF mPM replace skipped " + t);
-            }
+            mPmField.set(apm, proxy);
 
             Log.i(TAG, "SPOOF installed for " + pkg);
         } catch (Throwable t) {
             Log.w(TAG, "SPOOF_ERR " + t);
         }
+    }
+
+    /** mPM is declared on ApplicationPackageManager; walk up in case getClass() is a ROM subclass. */
+    private static Field findField(Class<?> cls, String name) {
+        for (Class<?> c = cls; c != null; c = c.getSuperclass()) {
+            try {
+                return c.getDeclaredField(name);
+            } catch (NoSuchFieldException ignored) {
+                // keep walking up
+            }
+        }
+        return null;
     }
 
     private static final class PmHandler implements InvocationHandler {
