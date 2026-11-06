@@ -36,6 +36,16 @@ internal val darazApplicationOnCreateFingerprint = Fingerprint(
     custom = { method, classDef -> classDef.type == APPLICATION && method.name == "onCreate" },
 )
 
+// attachBaseContext(Context) runs before onCreate and is a common place for Alibaba's SecurityGuard
+// to initialise. Matching by class + name + the single Context parameter only (no accessFlags: it is
+// declared protected, not public). Optional — if this build doesn't override it, the onCreate
+// install still runs.
+internal val darazApplicationAttachBaseFingerprint = Fingerprint(
+    returnType = "V",
+    parameters = listOf("Landroid/content/Context;"),
+    custom = { method, classDef -> classDef.type == APPLICATION && method.name == "attachBaseContext" },
+)
+
 internal val ucWebClientPageFinishedFingerprint = Fingerprint(
     returnType = "V",
     accessFlags = listOf(AccessFlags.PUBLIC),
@@ -73,6 +83,15 @@ val autoCollectCoinsPatch = bytecodePatch(
     extendWith("extensions/extension.mpe")
 
     execute {
+        // Install the signing-certificate spoof as early as possible — before Daraz's SecurityGuard
+        // can cache the patched cert. attachBaseContext runs before onCreate; p1 is its Context
+        // argument (the base context, whose PackageManager is usable here even before super runs).
+        // Non-fatal: if this build doesn't override attachBaseContext the onCreate install covers it.
+        runCatching { darazApplicationAttachBaseFingerprint.method }.getOrNull()?.addInstructions(
+            0,
+            "invoke-static {p1}, $COINS->onAttachBaseContext(Landroid/content/Context;)V",
+        )
+
         darazApplicationOnCreateFingerprint.method.addInstructions(
             0,
             "invoke-static {p0}, $COINS->onAppCreate(Landroid/app/Application;)V",
