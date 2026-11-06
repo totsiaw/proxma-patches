@@ -11,6 +11,12 @@ import com.android.tools.smali.dexlib2.Opcode
 internal val firestoreDocConverterFingerprint = Fingerprint(
     returnType = "Ljava/util/HashMap;",
     filters = listOf(string("Provided serverTimestampBehavior value must not be null.")),
+    // The string + HashMap return matches both DocumentSnapshot (the base
+    // converter, document().get() path) and QueryDocumentSnapshot (query path,
+    // which just delegates via invoke-super). Pin the base: it extends Object,
+    // the subclass extends DocumentSnapshot. document()/get() reads — where the
+    // subscription doc is fetched — go through the base, so we must patch it.
+    custom = { _, classDef -> classDef.superclass == "Ljava/lang/Object;" },
 )
 
 @Suppress("unused")
@@ -38,7 +44,7 @@ val unlockPassPatch = bytecodePatch(
                 invoke-interface {p1, v0}, Ljava/util/Map;->containsKey(Ljava/lang/Object;)Z
                 move-result v1
                 if-eqz v1, :sw_b_ver2
-                const-string v1, "1.0.3"
+                const-string v1, "1.0.5"
                 invoke-interface {p1, v0, v1}, Ljava/util/Map;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
                 :sw_b_ver2
                 const-string v0, "android_latest_build"
@@ -50,7 +56,7 @@ val unlockPassPatch = bytecodePatch(
                 if-eqz v1, :sw_b_ver2_putstr
                 instance-of v2, v1, Ljava/lang/Integer;
                 if-eqz v2, :sw_b_ver2_long
-                const/16 v2, 0x22
+                const/16 v2, 0x26
                 invoke-static {v2}, Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;
                 move-result-object v1
                 invoke-interface {p1, v0, v1}, Ljava/util/Map;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
@@ -58,7 +64,7 @@ val unlockPassPatch = bytecodePatch(
                 :sw_b_ver2_long
                 instance-of v2, v1, Ljava/lang/Long;
                 if-eqz v2, :sw_b_ver2_chkstr
-                const-wide/16 v1, 0x22
+                const-wide/16 v1, 0x26
                 invoke-static {v1, v2}, Ljava/lang/Long;->valueOf(J)Ljava/lang/Long;
                 move-result-object v1
                 invoke-interface {p1, v0, v1}, Ljava/util/Map;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
@@ -67,14 +73,14 @@ val unlockPassPatch = bytecodePatch(
                 instance-of v2, v1, Ljava/lang/String;
                 if-eqz v2, :sw_b_ver_done
                 :sw_b_ver2_putstr
-                const-string v1, "34"
+                const-string v1, "38"
                 invoke-interface {p1, v0, v1}, Ljava/util/Map;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
                 :sw_b_ver_done
-                iget-object v0, p0, Lj4/p;->b:Lp4/h;
+                iget-object v0, p0, Lcom/google/firebase/firestore/r;->b:LA5/i;
                 if-eqz v0, :sw_b_end
-                iget-object v0, v0, Lp4/h;->a:Lp4/m;
+                iget-object v0, v0, LA5/i;->a:LA5/r;
                 if-eqz v0, :sw_b_end
-                invoke-virtual {v0}, Lp4/m;->c()Ljava/lang/String;
+                invoke-virtual {v0}, LA5/r;->h()Ljava/lang/String;
                 move-result-object v0
                 if-eqz v0, :sw_b_end
                 const-string v1, "users/"
@@ -114,10 +120,10 @@ val unlockPassPatch = bytecodePatch(
                 if-nez p1, :sw_b_modify
                 new-instance p1, Ljava/util/HashMap;
                 invoke-direct {p1}, Ljava/util/HashMap;-><init>()V
-                new-instance p0, Lw3/q;
+                new-instance p0, Lu4/r;
                 const/4 v2, 0x0
                 const-wide v0, 0xf4865700L
-                invoke-direct {p0, v2, v0, v1}, Lw3/q;-><init>(IJ)V
+                invoke-direct {p0, v2, v0, v1}, Lu4/r;-><init>(IJ)V
                 const-string v0, "pass_expires_at"
                 invoke-interface {p1, v0, p0}, Ljava/util/Map;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
                 move-result-object v0
@@ -143,10 +149,10 @@ val unlockPassPatch = bytecodePatch(
                 invoke-interface {p1, v0}, Ljava/util/Map;->containsKey(Ljava/lang/Object;)Z
                 move-result v1
                 if-nez v1, :sw_b_ensure_active
-                new-instance p0, Lw3/q;
+                new-instance p0, Lu4/r;
                 const/4 v2, 0x0
                 const-wide v0, 0xf4865700L
-                invoke-direct {p0, v2, v0, v1}, Lw3/q;-><init>(IJ)V
+                invoke-direct {p0, v2, v0, v1}, Lu4/r;-><init>(IJ)V
                 const-string v0, "pass_expires_at"
                 invoke-interface {p1, v0, p0}, Ljava/util/Map;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
                 move-result-object v0
@@ -166,21 +172,21 @@ val unlockPassPatch = bytecodePatch(
                 invoke-interface {p1, v1}, Ljava/util/Map;->get(Ljava/lang/Object;)Ljava/lang/Object;
                 move-result-object v2
                 if-nez v2, :sw_b_ek1_typed
-                new-instance p0, Lw3/q;
+                new-instance p0, Lu4/r;
                 const/4 v2, 0x0
                 const-wide v0, 0xf4865700L
-                invoke-direct {p0, v2, v0, v1}, Lw3/q;-><init>(IJ)V
+                invoke-direct {p0, v2, v0, v1}, Lu4/r;-><init>(IJ)V
                 const-string v0, "pass_expires_at"
                 invoke-interface {p1, v0, p0}, Ljava/util/Map;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
                 move-result-object v0
                 goto :sw_b_ek2
                 :sw_b_ek1_typed
-                instance-of v0, v2, Lw3/q;
+                instance-of v0, v2, Lu4/r;
                 if-eqz v0, :sw_b_ek1_date
-                new-instance p0, Lw3/q;
+                new-instance p0, Lu4/r;
                 const/4 v2, 0x0
                 const-wide v0, 0xf4865700L
-                invoke-direct {p0, v2, v0, v1}, Lw3/q;-><init>(IJ)V
+                invoke-direct {p0, v2, v0, v1}, Lu4/r;-><init>(IJ)V
                 const-string v0, "pass_expires_at"
                 invoke-interface {p1, v0, p0}, Ljava/util/Map;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
                 move-result-object v0
@@ -230,21 +236,21 @@ val unlockPassPatch = bytecodePatch(
                 invoke-interface {p1, v1}, Ljava/util/Map;->get(Ljava/lang/Object;)Ljava/lang/Object;
                 move-result-object v2
                 if-nez v2, :sw_b_ek2_typed
-                new-instance p0, Lw3/q;
+                new-instance p0, Lu4/r;
                 const/4 v2, 0x0
                 const-wide v0, 0xf4865700L
-                invoke-direct {p0, v2, v0, v1}, Lw3/q;-><init>(IJ)V
+                invoke-direct {p0, v2, v0, v1}, Lu4/r;-><init>(IJ)V
                 const-string v0, "validTill"
                 invoke-interface {p1, v0, p0}, Ljava/util/Map;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
                 move-result-object v0
                 goto :sw_b_ek3
                 :sw_b_ek2_typed
-                instance-of v0, v2, Lw3/q;
+                instance-of v0, v2, Lu4/r;
                 if-eqz v0, :sw_b_ek2_other
-                new-instance p0, Lw3/q;
+                new-instance p0, Lu4/r;
                 const/4 v2, 0x0
                 const-wide v0, 0xf4865700L
-                invoke-direct {p0, v2, v0, v1}, Lw3/q;-><init>(IJ)V
+                invoke-direct {p0, v2, v0, v1}, Lu4/r;-><init>(IJ)V
                 const-string v0, "validTill"
                 invoke-interface {p1, v0, p0}, Ljava/util/Map;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
                 move-result-object v0
@@ -264,21 +270,21 @@ val unlockPassPatch = bytecodePatch(
                 invoke-interface {p1, v1}, Ljava/util/Map;->get(Ljava/lang/Object;)Ljava/lang/Object;
                 move-result-object v2
                 if-nez v2, :sw_b_ek3_typed
-                new-instance p0, Lw3/q;
+                new-instance p0, Lu4/r;
                 const/4 v2, 0x0
                 const-wide v0, 0xf4865700L
-                invoke-direct {p0, v2, v0, v1}, Lw3/q;-><init>(IJ)V
+                invoke-direct {p0, v2, v0, v1}, Lu4/r;-><init>(IJ)V
                 const-string v0, "expires_at"
                 invoke-interface {p1, v0, p0}, Ljava/util/Map;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
                 move-result-object v0
                 goto :sw_b_ek4
                 :sw_b_ek3_typed
-                instance-of v0, v2, Lw3/q;
+                instance-of v0, v2, Lu4/r;
                 if-eqz v0, :sw_b_ek3_other
-                new-instance p0, Lw3/q;
+                new-instance p0, Lu4/r;
                 const/4 v2, 0x0
                 const-wide v0, 0xf4865700L
-                invoke-direct {p0, v2, v0, v1}, Lw3/q;-><init>(IJ)V
+                invoke-direct {p0, v2, v0, v1}, Lu4/r;-><init>(IJ)V
                 const-string v0, "expires_at"
                 invoke-interface {p1, v0, p0}, Ljava/util/Map;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
                 move-result-object v0
@@ -298,21 +304,21 @@ val unlockPassPatch = bytecodePatch(
                 invoke-interface {p1, v1}, Ljava/util/Map;->get(Ljava/lang/Object;)Ljava/lang/Object;
                 move-result-object v2
                 if-nez v2, :sw_b_ek4_typed
-                new-instance p0, Lw3/q;
+                new-instance p0, Lu4/r;
                 const/4 v2, 0x0
                 const-wide v0, 0xf4865700L
-                invoke-direct {p0, v2, v0, v1}, Lw3/q;-><init>(IJ)V
+                invoke-direct {p0, v2, v0, v1}, Lu4/r;-><init>(IJ)V
                 const-string v0, "expiresAt"
                 invoke-interface {p1, v0, p0}, Ljava/util/Map;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
                 move-result-object v0
                 goto :sw_b_bools
                 :sw_b_ek4_typed
-                instance-of v0, v2, Lw3/q;
+                instance-of v0, v2, Lu4/r;
                 if-eqz v0, :sw_b_ek4_other
-                new-instance p0, Lw3/q;
+                new-instance p0, Lu4/r;
                 const/4 v2, 0x0
                 const-wide v0, 0xf4865700L
-                invoke-direct {p0, v2, v0, v1}, Lw3/q;-><init>(IJ)V
+                invoke-direct {p0, v2, v0, v1}, Lu4/r;-><init>(IJ)V
                 const-string v0, "expiresAt"
                 invoke-interface {p1, v0, p0}, Ljava/util/Map;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
                 move-result-object v0
