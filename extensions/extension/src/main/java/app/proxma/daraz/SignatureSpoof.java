@@ -70,9 +70,39 @@ public final class SignatureSpoof {
             // We deliberately do NOT swap the process-global ActivityThread.sPackageManager here.
             // That global field is used by framework-internal callers on hot cold-start paths
             // (resource loading, ContentProviders, component resolution); proxying every one of
-            // those binder calls through our reflective InvocationHandler is what stalled the app on
-            // launch before. Scoping the hook to our own PackageManager keeps start-up untouched.
+            // those binder calls through our reflective InvocationHandler returned a tampered
+            // PackageInfo to framework callers and kept the app from even opening. Scoping the hook
+            // to our own PackageManager keeps start-up untouched.
+            //
+            // A single process can hold more than one ApplicationPackageManager: the context passed
+            // in (the Application, or its base context at attachBaseContext time) and the one behind
+            // getApplicationContext() can be distinct instances, each with its own mPM. SecurityGuard
+            // reads through whichever Context it was handed, so wrap both. Each wrap is independent
+            // and idempotent, so covering the extra instance can only widen the spoof, never break a
+            // path that already worked.
+            wrapPackageManager(context, pkg, origSig);
+            try {
+                Context appCtx = context.getApplicationContext();
+                if (appCtx != null && appCtx != context) {
+                    wrapPackageManager(appCtx, pkg, origSig);
+                }
+            } catch (Throwable t) {
+                Log.w(TAG, "SPOOF appctx skipped " + t);
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "SPOOF_ERR " + t);
+        }
+    }
+
+    /**
+     * Replace one Context's ApplicationPackageManager.mPM with a proxy that hands our own package
+     * the original certificate. Idempotent: a PM already proxied is left alone. Best-effort — any
+     * failure is logged and swallowed so it can never make the app worse than the un-spoofed build.
+     */
+    private static void wrapPackageManager(Context context, String pkg, Signature origSig) {
+        try {
             Object apm = context.getPackageManager();
+            if (apm == null) return;
             Field mPmField = findField(apm.getClass(), "mPM");
             if (mPmField == null) {
                 Log.w(TAG, "SPOOF mPM field not found");
@@ -101,7 +131,7 @@ public final class SignatureSpoof {
 
             Log.i(TAG, "SPOOF installed for " + pkg);
         } catch (Throwable t) {
-            Log.w(TAG, "SPOOF_ERR " + t);
+            Log.w(TAG, "SPOOF_WRAP " + t);
         }
     }
 
