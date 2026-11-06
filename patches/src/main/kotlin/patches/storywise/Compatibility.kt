@@ -12,8 +12,8 @@ internal val COMPATIBILITY_STORYWISE = Compatibility(
     signatures = emptySet(),
     targets = listOf(
         AppTarget(
-            version = "1.0.3",
-            minSdk = 25,
+            version = "1.0.5",
+            minSdk = 24,
         ),
     ),
 )

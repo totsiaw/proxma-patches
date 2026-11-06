@@ -8,14 +8,18 @@ import com.android.tools.smali.dexlib2.Opcode
 @Suppress("unused")
 val blockUpdatePromptPatch = bytecodePatch(
     name = "Block update prompt",
-    description = "Forces Remote Config to report latest_version_name=1.0.3 and " +
-        "android_latest_build=34, matching the installed version so the force-update " +
+    description = "Forces Remote Config to report latest_version_name=1.0.5 and " +
+        "android_latest_build=38, matching the installed version so the force-update " +
         "dialog never appears.",
 ) {
     compatibleWith(COMPATIBILITY_STORYWISE)
 
     execute {
-        val rcClass = mutableClassDefBy("LR5/e;")
+        // firebase_remote_config Flutter plugin: parameters-to-HashMap builder.
+        // 1.0.5 ships the Firebase plugins/SDK un-obfuscated-ish; the builder is
+        // Ll7/e;->d(Ljava/util/HashMap;)Ljava/util/HashMap; and it returns the outer
+        // map in v0 at the final return-object.
+        val rcClass = mutableClassDefBy("Ll7/e;")
         val dMethod = rcClass.methods.first {
             it.name == "d" && it.returnType == "Ljava/util/HashMap;"
         }
@@ -28,8 +32,8 @@ val blockUpdatePromptPatch = bytecodePatch(
             """
                 new-instance v1, Ljava/util/HashMap;
                 invoke-direct {v1}, Ljava/util/HashMap;-><init>()V
-                const-string v2, "1.0.3"
-                sget-object v3, LM4/k;->e:Ljava/nio/charset/Charset;
+                const-string v2, "1.0.5"
+                sget-object v3, LX5/k;->e:Ljava/nio/charset/Charset;
                 invoke-virtual {v2, v3}, Ljava/lang/String;->getBytes(Ljava/nio/charset/Charset;)[B
                 move-result-object v2
                 const-string v3, "value"
@@ -41,8 +45,8 @@ val blockUpdatePromptPatch = bytecodePatch(
                 invoke-virtual {v0, v2, v1}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
                 new-instance v1, Ljava/util/HashMap;
                 invoke-direct {v1}, Ljava/util/HashMap;-><init>()V
-                const-string v2, "34"
-                sget-object v3, LM4/k;->e:Ljava/nio/charset/Charset;
+                const-string v2, "38"
+                sget-object v3, LX5/k;->e:Ljava/nio/charset/Charset;
                 invoke-virtual {v2, v3}, Ljava/lang/String;->getBytes(Ljava/nio/charset/Charset;)[B
                 move-result-object v2
                 const-string v3, "value"
