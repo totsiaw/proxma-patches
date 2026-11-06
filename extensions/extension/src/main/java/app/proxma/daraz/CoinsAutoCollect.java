@@ -89,6 +89,22 @@ public final class CoinsAutoCollect {
 
     // ---------------------------------------------------------------- entry points
 
+    /**
+     * Called at the very start of the app's Application.attachBaseContext, before super runs. This
+     * is the earliest Java hook in the process, so it installs the signature spoof before Daraz's
+     * SecurityGuard / mtop stack can initialise and cache the app's (patched) certificate — which
+     * attachBaseContext is a common place for it to happen. Best-effort; never fatal.
+     */
+    public static void onAttachBaseContext(Context base) {
+        try {
+            if (base == null) return;
+            SignatureSpoof.install(base);
+            Log.i(TAG, "ATTACH spoof installed early");
+        } catch (Throwable t) {
+            Log.w(TAG, "ATTACH_ERR " + t);
+        }
+    }
+
     /** Called at the end of the app's Application.onCreate. */
     public static void onAppCreate(Application app) {
         try {

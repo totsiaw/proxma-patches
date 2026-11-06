@@ -47,14 +47,16 @@ public final class SignatureSpoof {
             "Pv0GaVn46NwQ2kbz0fo8lLkbB5YcLqVdQYyymm4fPErD2l2sQ6iwoWXVn8w8evt6eTLLxFsxxDbk3Q244122P28" +
             "YedWXZKkHMC9Y0BhpKLtPzuqPH0QAl3Td+f0B+2YoRzLqguZHNl";
 
-    private static volatile boolean sDone;
-
     private SignatureSpoof() {}
 
+    // Called more than once on purpose: once as early as Application.attachBaseContext (before
+    // Daraz's SecurityGuard / mtop stack can read and cache the patched certificate) and again at
+    // Application.onCreate. Each call wraps the mPM of the PackageManager it is handed; the two
+    // Application contexts can be distinct ApplicationPackageManager instances with their own mPM,
+    // so wrapping both widens the chance SecurityGuard reads a spoofed signature. Re-wrapping the
+    // same instance is a no-op (see the Proxy.isProxyClass guard below), so this stays idempotent.
     public static void install(Context context) {
         try {
-            if (sDone) return;
-            sDone = true;
             if (context == null) return;
 
             final String pkg = context.getPackageName();
@@ -167,6 +169,12 @@ public final class SignatureSpoof {
                 if (!trySet(sd, "mSignatures", one) && !trySet(sd, "signatures", one)) {
                     Log.w(TAG, "SPOOF signingInfo field not found");
                 }
+                // SigningInfo.getSigningCertificateHistory() reads the past-certificate list; on an
+                // app that never rotated keys it is normally a single-entry list. Rewrite it too so
+                // a reader that walks the history still sees only the original cert. Absent on some
+                // ROMs, so this is silent best-effort, not a warning.
+                trySet(sd, "mPastSigningCertificates", one);
+                trySet(sd, "pastSigningCertificates", one);
             } catch (Throwable t) {
                 Log.w(TAG, "SPOOF_SIGNINGINFO " + t);
             }
