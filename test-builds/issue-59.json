@@ -1,0 +1,7 @@
+{
+  "created_at": "2026-11-08T12:00:00",
+  "description": "Test build for issue #59 (ROX): daily check-in also runs in the background.",
+  "download_url": "https://github.com/totsiaw/proxma-patches/releases/download/test-issue-59-r17/patches-rox-test-r17.mpp",
+  "signature_download_url": "",
+  "version": "1.28.1-test.17"
+}
