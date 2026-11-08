@@ -59,6 +59,11 @@ public final class IdleClose {
             Log.i(TAG, "IDLE check skipped, a screen is visible again");
             return;
         }
+        if (AutoCheckin.backgroundRunning()) {
+            Log.i(TAG, "IDLE background check-in running, checking again later");
+            sHandler.postDelayed(CHECK, AUDIO_RECHECK_MS);
+            return;
+        }
         AudioManager audio = (AudioManager) sContext.getSystemService(Context.AUDIO_SERVICE);
         if (audio != null && audio.isMusicActive()) {
             Log.i(TAG, "IDLE audio playing, checking again later");

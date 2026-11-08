@@ -28,7 +28,8 @@ internal val roxMainActivityOnCreateFingerprint = Fingerprint(
 val autoCheckinPatch = bytecodePatch(
     name = "Auto check-in daily streak",
     description = "Presses the Daily Streak Check-in button for you when the app is open, once a day. " +
-        "It runs the app's own check-in, so it needs you to be signed in and to open the app each day.",
+        "It runs the app's own check-in, so it needs you to be signed in. Add \"Auto check-in in the " +
+        "background\" so you don't have to open the app each day.",
 ) {
     compatibleWith(COMPATIBILITY_ROX)
     extendWith("extensions/extension.mpe")

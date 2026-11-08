@@ -4,21 +4,31 @@ import android.app.Activity;
 import android.app.Application;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.ContentResolver;
+import android.graphics.PixelFormat;
 import android.graphics.Rect;
+import android.media.Image;
+import android.media.ImageReader;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.MotionEvent;
+import android.view.Surface;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.accessibility.AccessibilityManager;
 import android.view.accessibility.AccessibilityNodeProvider;
+import android.widget.FrameLayout;
 import android.widget.Toast;
 
+import java.lang.ref.WeakReference;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -31,7 +41,8 @@ import java.util.TimeZone;
  * ROX is a Flutter app: its check-in request is built and signed in Dart, out of reach of Java. So
  * instead of replaying the request, this presses the app's own Check-in button through Flutter's
  * semantics tree, the same tree a screen reader uses. The app sends its own request and shows its
- * own result. It only runs while the app is open.
+ * own result. It runs while the app is open, and from a background job (CheckinJobService) that
+ * starts the app's Flutter code off-screen, with no window, and presses the same button there.
  */
 public final class AutoCheckin {
 
@@ -40,6 +51,8 @@ public final class AutoCheckin {
     private static final String KEY_DONE_DAY = "done_day";
     private static final String KEY_TRY_DAY = "try_day";
     private static final String KEY_TRIES = "tries";
+    private static final String KEY_BG_TRY_DAY = "bg_try_day";
+    private static final String KEY_BG_TRIES = "bg_tries";
 
     private static final String FLUTTER_VIEW = "io.flutter.embedding.android.FlutterView";
     private static final String STREAK_ROUTE = "/dailyStreaksScreen";
@@ -48,6 +61,9 @@ public final class AutoCheckin {
     // Every session counts, whatever its outcome, so a screen the helper can't read costs at most
     // five short sessions a day instead of one on every app open.
     private static final int MAX_TRIES_PER_DAY = 5;
+    // Background sessions have their own budget, so they never use up the ones for app opens.
+    private static final int MAX_BG_TRIES_PER_DAY = 3;
+    private static final long BG_CLOSE_DELAY_MS = 4_000L;
     private static final long TICK_MS = 1500L;
     private static final long SESSION_TIMEOUT_MS = 120_000L;
     private static final long HOME_GRACE_MS = 15_000L;
@@ -76,12 +92,18 @@ public final class AutoCheckin {
 
     private static volatile boolean sRegistered = false;
     private static Session sSession;
+    private static WeakReference<Activity> sMain = new WeakReference<>(null);
 
     private AutoCheckin() {}
 
     public static void onActivityCreate(Activity activity) {
         try {
             if (activity == null) return;
+            sMain = new WeakReference<>(activity);
+            if (sSession != null && sSession.host.background()) {
+                Log.i(TAG, "ENTRY app opened, stopping background session");
+                sSession.end("app opened during background session", false);
+            }
             if (!sRegistered) {
                 sRegistered = true;
                 activity.getApplication().registerActivityLifecycleCallbacks(new Callbacks());
@@ -111,8 +133,53 @@ public final class AutoCheckin {
         }
         Log.i(TAG, "START session, earlier tries today " + tries);
         prefs.edit().putString(KEY_TRY_DAY, today).putInt(KEY_TRIES, tries + 1).apply();
-        sSession = new Session(activity);
+        sSession = new Session(new ActivityHost(activity), null);
         sSession.run();
+    }
+
+    /** Called from CheckinJobService on the main thread. Returns true when a session started. */
+    static boolean startBackground(Context context, Runnable onDone) {
+        try {
+            if (sSession != null) {
+                Log.i(TAG, "BG skipped, session running");
+                return false;
+            }
+            Activity main = sMain.get();
+            if (main != null && !main.isDestroyed()) {
+                Log.i(TAG, "BG skipped, app screen exists");
+                return false;
+            }
+            Context app = context.getApplicationContext();
+            SharedPreferences prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+            String today = today();
+            if (today.equals(prefs.getString(KEY_DONE_DAY, ""))) {
+                Log.i(TAG, "BG skipped, already done " + today);
+                return false;
+            }
+            int tries = today.equals(prefs.getString(KEY_BG_TRY_DAY, "")) ? prefs.getInt(KEY_BG_TRIES, 0) : 0;
+            if (tries >= MAX_BG_TRIES_PER_DAY) {
+                Log.i(TAG, "BG skipped, background tries used up " + tries);
+                return false;
+            }
+            prefs.edit().putString(KEY_BG_TRY_DAY, today).putInt(KEY_BG_TRIES, tries + 1).commit();
+            Log.i(TAG, "BG start session, earlier background tries today " + tries);
+            sSession = new Session(new HeadlessHost(app), onDone);
+            sSession.run();
+            return true;
+        } catch (Throwable t) {
+            Log.w(TAG, "BG_START_ERR " + t);
+            if (sSession != null && sSession.host.background()) sSession.end("background start failed", false);
+            return false;
+        }
+    }
+
+    /** Called when the system stops the background job early. */
+    static void stopBackground(String why) {
+        if (sSession != null && sSession.host.background()) sSession.end(why, false);
+    }
+
+    static boolean backgroundRunning() {
+        return sSession != null && sSession.host.background();
     }
 
     private static String today() {
@@ -131,15 +198,16 @@ public final class AutoCheckin {
         }
 
         @Override public void onActivityPaused(Activity activity) {
-            if (sSession != null && sSession.activity == activity) sSession.end("paused", false);
+            if (sSession != null && sSession.host.owns(activity)) sSession.end("paused", false);
         }
 
         @Override public void onActivityStopped(Activity activity) {
-            if (sSession != null && sSession.activity == activity) sSession.end("stopped", false);
+            if (sSession != null && sSession.host.owns(activity)) sSession.end("stopped", false);
         }
 
         @Override public void onActivityDestroyed(Activity activity) {
-            if (sSession != null && sSession.activity == activity) sSession.end("destroyed", false);
+            if (sSession != null && sSession.host.owns(activity)) sSession.end("destroyed", false);
+            if (sMain.get() == activity) sMain = new WeakReference<>(null);
         }
 
         @Override public void onActivityCreated(Activity activity, Bundle state) {}
@@ -168,7 +236,8 @@ public final class AutoCheckin {
     }
 
     private static final class Session implements Runnable {
-        final Activity activity;
+        final Host host;
+        final Runnable onDone;
         final Handler handler = new Handler(Looper.getMainLooper());
         final long startedAt = SystemClock.uptimeMillis();
         Phase phase = Phase.WAIT_HOME;
@@ -178,10 +247,11 @@ public final class AutoCheckin {
         boolean semanticsOn = false;
         boolean retapped = false;
         boolean finished = false;
-        View view;
+        boolean claimed = false;
 
-        Session(Activity activity) {
-            this.activity = activity;
+        Session(Host host, Runnable onDone) {
+            this.host = host;
+            this.onDone = onDone;
         }
 
         @Override public void run() {
@@ -207,12 +277,10 @@ public final class AutoCheckin {
             }
             handler.postDelayed(this, TICK_MS);
 
-            View found = findFlutterView(activity.getWindow().getDecorView());
-            if (found == null) {
+            if (!host.ready()) {
                 Log.i(TAG, "TICK no FlutterView yet");
                 return;
             }
-            view = found;
             if (!enableSemantics()) return;
 
             List<Node> nodes = readTree();
@@ -236,6 +304,11 @@ public final class AutoCheckin {
                 return;
             }
             if (anyContains(nodes, LOGIN_LABELS)) {
+                if (host.background()) {
+                    Log.i(TAG, "HOME login screen in background, giving up");
+                    end("not signed in", false);
+                    return;
+                }
                 Log.i(TAG, "HOME login screen showing, waiting");
                 return;
             }
@@ -332,6 +405,7 @@ public final class AutoCheckin {
 
         void finishSuccess(List<Node> nodes) {
             markDone();
+            claimed = true;
             Node dismiss = findDismiss(nodes);
             if (dismiss != null) {
                 Log.i(TAG, "RESULT dismissing, label " + dismiss.label);
@@ -349,7 +423,7 @@ public final class AutoCheckin {
                     }
                 }
             }, 1200L);
-            end("Daily check-in done", true);
+            end(host.background() ? "Daily check-in done in the background" : "Daily check-in done", true);
         }
 
         void openStreakRoute(long now) {
@@ -360,6 +434,10 @@ public final class AutoCheckin {
         }
 
         void leaveStreakScreen() {
+            if (host.background()) {
+                Log.i(TAG, "LEAVE skipped, background engine is closed afterwards");
+                return;
+            }
             if (routedToStreak) {
                 pushRoute(HOME_ROUTE);
                 Log.i(TAG, "LEAVE pushed " + HOME_ROUTE);
@@ -377,8 +455,8 @@ public final class AutoCheckin {
         }
 
         void markDone() {
-            activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-                .putString(KEY_DONE_DAY, today()).apply();
+            host.context().getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .putString(KEY_DONE_DAY, today()).commit();
         }
 
         void end(String message, boolean toast) {
@@ -386,10 +464,25 @@ public final class AutoCheckin {
             finished = true;
             handler.removeCallbacks(this);
             if (sSession == this) sSession = null;
-            Log.i(TAG, "END " + message);
+            Log.i(TAG, "END " + message + (host.background() ? " (background)" : ""));
             restoreSemantics();
+            // In the background only a real check-in is worth a toast; misses retry quietly later.
+            if (host.background()) toast = toast && claimed;
             if (toast && message != null) {
-                Toast.makeText(activity.getApplicationContext(), "ROX patch: " + message, Toast.LENGTH_LONG).show();
+                try {
+                    Toast.makeText(host.context().getApplicationContext(), "ROX patch: " + message, Toast.LENGTH_LONG).show();
+                } catch (Throwable t) {
+                    Log.w(TAG, "TOAST_ERR " + t);
+                }
+            }
+            if (host.background()) {
+                // Give the app a moment to finish the request it just sent before its engine goes.
+                handler.postDelayed(new Runnable() {
+                    @Override public void run() {
+                        host.close();
+                        if (onDone != null) onDone.run();
+                    }
+                }, claimed ? BG_CLOSE_DELAY_MS : 0L);
             }
         }
 
@@ -410,7 +503,7 @@ public final class AutoCheckin {
             if (!semanticsOn) return;
             try {
                 AccessibilityManager manager =
-                    (AccessibilityManager) activity.getSystemService(Context.ACCESSIBILITY_SERVICE);
+                    (AccessibilityManager) host.context().getSystemService(Context.ACCESSIBILITY_SERVICE);
                 setSemantics(manager != null && manager.isEnabled());
                 Log.i(TAG, "SEMANTICS restored");
             } catch (Throwable t) {
@@ -441,13 +534,11 @@ public final class AutoCheckin {
         }
 
         Object engine() throws Exception {
-            Object engine = activity.getClass().getMethod("getFlutterEngine").invoke(activity);
-            if (engine == null) throw new IllegalStateException("no engine");
-            return engine;
+            return host.engine();
         }
 
         AccessibilityNodeProvider bridge() throws Exception {
-            return (AccessibilityNodeProvider) field(view, "accessibilityBridge");
+            return host.bridge();
         }
 
         @SuppressWarnings("unchecked")
@@ -487,6 +578,11 @@ public final class AutoCheckin {
         }
 
         boolean touch(Node node) throws Exception {
+            View view = host.touchView();
+            if (view == null) {
+                Log.w(TAG, "TOUCH no view to touch in the background");
+                return false;
+            }
             Rect rect = (Rect) field(node.raw, "globalRect");
             if (rect == null || rect.isEmpty()) {
                 Log.w(TAG, "TOUCH no bounds for node");
@@ -502,6 +598,295 @@ public final class AutoCheckin {
             press.recycle();
             release.recycle();
             return true;
+        }
+    }
+
+    private interface Host {
+        Context context();
+        boolean ready();
+        Object engine() throws Exception;
+        AccessibilityNodeProvider bridge() throws Exception;
+        View touchView();
+        boolean background();
+        boolean owns(Activity activity);
+        void close();
+    }
+
+    /** The app's own screen: its FlutterView and its engine. */
+    private static final class ActivityHost implements Host {
+        final Activity activity;
+        View view;
+
+        ActivityHost(Activity activity) {
+            this.activity = activity;
+        }
+
+        @Override public Context context() {
+            return activity;
+        }
+
+        @Override public boolean ready() {
+            View found = findFlutterView(activity.getWindow().getDecorView());
+            if (found == null) return false;
+            view = found;
+            return true;
+        }
+
+        @Override public Object engine() throws Exception {
+            Object engine = activity.getClass().getMethod("getFlutterEngine").invoke(activity);
+            if (engine == null) throw new IllegalStateException("no engine");
+            return engine;
+        }
+
+        @Override public AccessibilityNodeProvider bridge() throws Exception {
+            return (AccessibilityNodeProvider) field(view, "accessibilityBridge");
+        }
+
+        @Override public View touchView() {
+            return view;
+        }
+
+        @Override public boolean background() {
+            return false;
+        }
+
+        @Override public boolean owns(Activity other) {
+            return activity == other;
+        }
+
+        @Override public void close() {}
+    }
+
+    /**
+     * A second Flutter engine running the app's own Dart code with no window: it renders into an
+     * ImageReader that is drained and thrown away, gets a phone-sized viewport and the resumed
+     * lifecycle, and gets the two native channels MainActivity adds. The semantics tree comes from
+     * an AccessibilityBridge on a detached view, the same class FlutterView uses for it.
+     */
+    private static final class HeadlessHost implements Host {
+        final Context context;
+        final Handler handler = new Handler(Looper.getMainLooper());
+        Object engine;
+        Object renderer;
+        Object platformViews;
+        Object platformViews2;
+        AccessibilityNodeProvider bridge;
+        ImageReader reader;
+        boolean closed = false;
+
+        HeadlessHost(Context context) throws Exception {
+            this.context = context;
+            try {
+                build();
+            } catch (Exception e) {
+                close();
+                throw e;
+            }
+        }
+
+        private void build() throws Exception {
+            Class<?> engineClass = Class.forName("io.flutter.embedding.engine.FlutterEngine");
+            engine = engineClass.getConstructor(Context.class, String[].class)
+                .newInstance(context, new String[] {"--disable-impeller"});
+            Log.i(TAG, "BG engine created");
+            Object executor = call(engine, "getDartExecutor");
+            addChannels(call(executor, "getBinaryMessenger"));
+
+            renderer = call(engine, "getRenderer");
+            Class<?> executorClass = Class.forName("io.flutter.embedding.engine.dart.DartExecutor");
+            try {
+                Object controller = call(engine, "getPlatformViewsController");
+                controller.getClass().getMethod("attach", Context.class,
+                        Class.forName("io.flutter.view.TextureRegistry"), executorClass)
+                    .invoke(controller, context, renderer, executor);
+                platformViews = controller;
+            } catch (Throwable t) {
+                Log.w(TAG, "BG platform views attach failed " + t);
+            }
+            try {
+                Object controller = call(engine, "getPlatformViewsController2");
+                controller.getClass().getMethod("attach", Context.class, executorClass)
+                    .invoke(controller, context, executor);
+                platformViews2 = controller;
+            } catch (Throwable t) {
+                Log.w(TAG, "BG platform views 2 attach failed " + t);
+            }
+
+            DisplayMetrics metrics = context.getResources().getDisplayMetrics();
+            float density = metrics.density > 0 ? metrics.density : 2.75f;
+            int fullWidth = Math.max(metrics.widthPixels, 720);
+            int fullHeight = Math.max(metrics.heightPixels, 1280);
+            // Half the pixels, same layout: the logical size the Dart code sees does not change.
+            int width = fullWidth / 2;
+            int height = fullHeight / 2;
+            float ratio = density / 2f;
+            reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2);
+            reader.setOnImageAvailableListener(new ImageReader.OnImageAvailableListener() {
+                @Override public void onImageAvailable(ImageReader source) {
+                    try {
+                        Image image = source.acquireLatestImage();
+                        if (image != null) image.close();
+                    } catch (Throwable ignored) {
+                    }
+                }
+            }, handler);
+            renderer.getClass().getMethod("startRenderingToSurface", Surface.class, boolean.class)
+                .invoke(renderer, reader.getSurface(), false);
+            renderer.getClass().getMethod("surfaceChanged", int.class, int.class).invoke(renderer, width, height);
+            Class<?> metricsClass = Class.forName("io.flutter.embedding.engine.renderer.FlutterRenderer$ViewportMetrics");
+            Object viewport = metricsClass.getConstructor().newInstance();
+            metricsClass.getField("devicePixelRatio").setFloat(viewport, ratio);
+            metricsClass.getField("width").setInt(viewport, width);
+            metricsClass.getField("height").setInt(viewport, height);
+            renderer.getClass().getMethod("setViewportMetrics", metricsClass).invoke(renderer, viewport);
+            try {
+                engineClass.getMethod("updateDisplayMetrics", float.class, float.class, float.class)
+                    .invoke(engine, (float) width, (float) height, ratio);
+            } catch (Throwable t) {
+                Log.w(TAG, "BG display metrics failed " + t);
+            }
+            Log.i(TAG, "BG viewport " + width + "x" + height + " ratio " + ratio);
+
+            // The bridge only reaches its view's parent when a screen reader is on; give it one.
+            FrameLayout parent = new FrameLayout(context);
+            View root = new View(context);
+            parent.addView(root);
+            bridge = (AccessibilityNodeProvider) Class.forName("io.flutter.view.AccessibilityBridge")
+                .getConstructor(View.class,
+                    Class.forName("io.flutter.embedding.engine.systemchannels.AccessibilityChannel"),
+                    AccessibilityManager.class, ContentResolver.class,
+                    Class.forName("io.flutter.plugin.platform.PlatformViewsAccessibilityDelegate"))
+                .newInstance(root, call(engine, "getAccessibilityChannel"),
+                    context.getSystemService(Context.ACCESSIBILITY_SERVICE), context.getContentResolver(),
+                    call(engine, "getPlatformViewsControllerDelegator"));
+
+            Object lifecycle = call(engine, "getLifecycleChannel");
+            call(lifecycle, "appIsResumed");
+            call(lifecycle, "aWindowIsFocused");
+
+            Class<?> entrypointClass = Class.forName("io.flutter.embedding.engine.dart.DartExecutor$DartEntrypoint");
+            Object entrypoint = entrypointClass.getMethod("createDefault").invoke(null);
+            executorClass.getMethod("executeDartEntrypoint", entrypointClass).invoke(executor, entrypoint);
+            Log.i(TAG, "BG dart entrypoint started");
+        }
+
+        private void addChannels(Object messenger) throws Exception {
+            Class<?> messengerClass = Class.forName("io.flutter.plugin.common.BinaryMessenger");
+            Class<?> channelClass = Class.forName("io.flutter.plugin.common.MethodChannel");
+            Class<?> handlerClass = Class.forName("io.flutter.plugin.common.MethodChannel$MethodCallHandler");
+            Method setHandler = channelClass.getMethod("setMethodCallHandler", handlerClass);
+            for (String name : new String[] {"native/keys", "native/settings"}) {
+                Object channel = channelClass.getConstructor(messengerClass, String.class).newInstance(messenger, name);
+                Object handler = Proxy.newProxyInstance(handlerClass.getClassLoader(), new Class<?>[] {handlerClass},
+                    new ChannelHandler(name));
+                setHandler.invoke(channel, handler);
+            }
+            Log.i(TAG, "BG native channels added");
+        }
+
+        @Override public Context context() {
+            return context;
+        }
+
+        @Override public boolean ready() {
+            return !closed && engine != null && bridge != null;
+        }
+
+        @Override public Object engine() throws Exception {
+            if (closed || engine == null) throw new IllegalStateException("no engine");
+            return engine;
+        }
+
+        @Override public AccessibilityNodeProvider bridge() {
+            return closed ? null : bridge;
+        }
+
+        @Override public View touchView() {
+            return null;
+        }
+
+        @Override public boolean background() {
+            return true;
+        }
+
+        @Override public boolean owns(Activity activity) {
+            return false;
+        }
+
+        @Override public void close() {
+            if (closed) return;
+            closed = true;
+            try {
+                if (bridge != null) bridge.getClass().getMethod("release").invoke(bridge);
+            } catch (Throwable t) {
+                Log.w(TAG, "BG bridge release failed " + t);
+            }
+            try {
+                if (renderer != null) call(renderer, "stopRenderingToSurface");
+            } catch (Throwable t) {
+                Log.w(TAG, "BG stop rendering failed " + t);
+            }
+            try {
+                if (platformViews != null) call(platformViews, "detach");
+                if (platformViews2 != null) call(platformViews2, "detach");
+            } catch (Throwable t) {
+                Log.w(TAG, "BG platform views detach failed " + t);
+            }
+            try {
+                if (engine != null) {
+                    call(engine, "destroy");
+                    Log.i(TAG, "BG engine destroyed");
+                }
+            } catch (Throwable t) {
+                Log.w(TAG, "BG engine destroy failed " + t);
+            }
+            try {
+                if (reader != null) reader.close();
+            } catch (Throwable ignored) {
+            }
+            engine = null;
+            bridge = null;
+        }
+    }
+
+    /** Stands in for MainActivity's handlers on the two channels it adds in configureFlutterEngine. */
+    private static final class ChannelHandler implements InvocationHandler {
+        final String channel;
+
+        ChannelHandler(String channel) {
+            this.channel = channel;
+        }
+
+        @Override public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+            String called = method.getName();
+            if (called.equals("hashCode")) return System.identityHashCode(proxy);
+            if (called.equals("equals")) return args != null && proxy == args[0];
+            if (called.equals("toString")) return "proxma-" + channel;
+            if (!called.equals("onMethodCall") || args == null || args.length != 2) return null;
+            Object result = args[1];
+            Class<?> resultClass = Class.forName("io.flutter.plugin.common.MethodChannel$Result");
+            String name = null;
+            try {
+                name = (String) field(args[0], "method");
+                if (channel.equals("native/keys") && "getSecretKey".equals(name)) {
+                    Class<?> provider = Class.forName("com.jazz.rox.NativeKeyProvider");
+                    Object instance = provider.getField("INSTANCE").get(null);
+                    Object key = provider.getMethod("getSecretKey").invoke(instance);
+                    resultClass.getMethod("success", Object.class).invoke(result, key);
+                    Log.i(TAG, "BG channel answered " + channel + " " + name);
+                    return null;
+                }
+                if (channel.equals("native/settings") && "openAppSettings".equals(name)) {
+                    resultClass.getMethod("success", Object.class).invoke(result, Boolean.FALSE);
+                    Log.i(TAG, "BG channel declined " + channel + " " + name);
+                    return null;
+                }
+            } catch (Throwable t) {
+                Log.w(TAG, "BG channel error " + channel + " " + name + " " + t);
+            }
+            resultClass.getMethod("notImplemented").invoke(result);
+            Log.i(TAG, "BG channel not implemented " + channel + " " + name);
+            return null;
         }
     }
 
