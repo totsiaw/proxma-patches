@@ -1,7 +1,7 @@
 {
   "created_at": "2026-11-11T12:00:00",
-  "description": "Test build for issue #59 (ROX): once-a-day background check-in with a result notification, idle close for background starts, and a reported reason when the background check-in can't start.",
-  "download_url": "https://github.com/totsiaw/proxma-patches/releases/download/test-issue-59-r20/patches-rox-test-r20.mpp",
+  "description": "Test build for issue #59 (ROX): once-a-day background check-in with a result notification, idle close for background starts, and a missed background try now says which screen it was stuck on.",
+  "download_url": "https://github.com/totsiaw/proxma-patches/releases/download/test-issue-59-r21/patches-rox-test-r21.mpp",
   "signature_download_url": "",
-  "version": "1.28.1-test.20"
+  "version": "1.28.1-test.21"
 }
