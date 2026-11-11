@@ -21,6 +21,7 @@ final class Notices {
     private static final String TAG = "PROXMA_ROX";
     private static final String CHANNEL = "proxma_rox_checkin";
     private static final int NOTICE_ID = 0x524f5802;
+    private static final int STATUS_ID = 0x524f5803;
 
     private Notices() {}
 
@@ -30,6 +31,15 @@ final class Notices {
 
     static void needsYou(Context context, String text) {
         post(context, "ROX daily check-in not done yet", text + " Tap to open ROX and it will check in.");
+    }
+
+    /**
+     * The full background result shown on an app open. A toast is cut to two lines on recent
+     * Android, so the whole text goes here too. Its own id, so a check-in that clears the
+     * reminder above leaves this one readable.
+     */
+    static void lastTry(Context context, String text) {
+        post(context, STATUS_ID, "ROX patch: last background try", text, false);
     }
 
     static void clear(Context context) {
@@ -42,6 +52,10 @@ final class Notices {
     }
 
     private static void post(Context context, String title, String text) {
+        post(context, NOTICE_ID, title, text, true);
+    }
+
+    private static void post(Context context, int id, String title, String text, boolean opensApp) {
         try {
             Context app = context.getApplicationContext();
             NotificationManager manager = (NotificationManager) app.getSystemService(Context.NOTIFICATION_SERVICE);
@@ -67,13 +81,14 @@ final class Notices {
                 .setAutoCancel(true)
                 .setShowWhen(true)
                 .setWhen(System.currentTimeMillis());
-            Intent launch = app.getPackageManager().getLaunchIntentForPackage(app.getPackageName());
+            Intent launch = opensApp
+                ? app.getPackageManager().getLaunchIntentForPackage(app.getPackageName()) : null;
             if (launch != null) {
                 launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                 builder.setContentIntent(PendingIntent.getActivity(app, 0, launch,
                     PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
             }
-            manager.notify(NOTICE_ID, builder.build());
+            manager.notify(id, builder.build());
             Log.i(TAG, "NOTICE posted: " + title + " / " + text);
         } catch (Throwable t) {
             Log.w(TAG, "NOTICE_ERR " + t);

@@ -268,6 +268,11 @@ public final class AutoCheckin {
             prefs.edit().putLong(KEY_BG_STATUS_SHOWN_AT, now).apply();
             Log.i(TAG, "STATUS shown " + text);
             Toast.makeText(activity.getApplicationContext(), "ROX patch: " + text, Toast.LENGTH_LONG).show();
+            // A success already has its own notification; anything else is kept readable in full.
+            if (!text.endsWith(": Daily check-in done in the background")) {
+                String full = text.substring(0, 1).toUpperCase(Locale.US) + text.substring(1);
+                Notices.lastTry(activity, full.endsWith(".") ? full : full + ".");
+            }
         } catch (Throwable t) {
             Log.w(TAG, "STATUS_ERR " + t);
         }
@@ -342,6 +347,8 @@ public final class AutoCheckin {
         boolean already = false;
         boolean sawLogin = false;
         String seen = "nothing yet";
+        // The first few texts on the last screen read, so a miss says which screen it was stuck on.
+        String shown = "";
 
         Session(Host host, Runnable onDone) {
             this.host = host;
@@ -392,6 +399,7 @@ public final class AutoCheckin {
                 return;
             }
             seen = nodes.size() + " items on screen";
+            shown = summarize(nodes);
 
             switch (phase) {
                 case WAIT_HOME: waitHome(nodes, now); break;
@@ -573,7 +581,8 @@ public final class AutoCheckin {
             finished = true;
             handler.removeCallbacks(this);
             if (sSession == this) sSession = null;
-            Log.i(TAG, "END " + message + (host.background() ? " (background)" : ""));
+            Log.i(TAG, "END " + message + (host.background() ? " (background)" : "")
+                + (shown.isEmpty() ? "" : ", screen showed " + shown));
             restoreSemantics();
             // In the background the result goes to a notification and to the status shown on the
             // next app open instead of a toast.
@@ -606,6 +615,9 @@ public final class AutoCheckin {
             String text = message == null ? "stopped" : message;
             if (text.equals("not signed in")) {
                 prefs(context).edit().putString(KEY_BG_SIGNED_OUT_DAY, today()).commit();
+            }
+            if (!claimed && !already && !shown.isEmpty()) {
+                text = text + "; screen showed " + shown;
             }
             recordBackground(context, text);
             if (claimed) {
@@ -1085,6 +1097,34 @@ public final class AutoCheckin {
             }
         }
         return false;
+    }
+
+    /**
+     * Up to four distinct texts from the screen, in tree order, each cut to 30 characters. Runs of
+     * five or more digits (a phone number, a balance) are masked, since the reporter may share a
+     * screenshot of the message.
+     */
+    private static String summarize(List<Node> nodes) {
+        List<Node> ordered = new ArrayList<>(nodes);
+        java.util.Collections.sort(ordered, new java.util.Comparator<Node>() {
+            @Override public int compare(Node a, Node b) {
+                return a.id < b.id ? -1 : (a.id == b.id ? 0 : 1);
+            }
+        });
+        StringBuilder out = new StringBuilder();
+        java.util.Set<String> used = new java.util.HashSet<>();
+        int count = 0;
+        for (Node node : ordered) {
+            String text = node.label.replace('\n', ' ').replaceAll("\\s+", " ").trim();
+            if (text.isEmpty()) continue;
+            text = text.replaceAll("\\d{5,}", "#####");
+            if (text.length() > 30) text = text.substring(0, 30) + "...";
+            if (!used.add(text)) continue;
+            if (out.length() > 0) out.append(" | ");
+            out.append('"').append(text).append('"');
+            if (++count >= 4) break;
+        }
+        return out.toString();
     }
 
     private static String normalize(String text) {
