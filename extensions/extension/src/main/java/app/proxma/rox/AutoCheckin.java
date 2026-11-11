@@ -53,6 +53,10 @@ public final class AutoCheckin {
     private static final String KEY_TRIES = "tries";
     private static final String KEY_BG_TRY_DAY = "bg_try_day";
     private static final String KEY_BG_TRIES = "bg_tries";
+    static final String KEY_BG_STATUS = "bg_status";
+    static final String KEY_BG_STATUS_AT = "bg_status_at";
+    private static final String KEY_BG_STATUS_SHOWN_AT = "bg_status_shown_at";
+    static final String KEY_BG_SIGNED_OUT_DAY = "bg_signed_out_day";
 
     private static final String FLUTTER_VIEW = "io.flutter.embedding.android.FlutterView";
     private static final String STREAK_ROUTE = "/dailyStreaksScreen";
@@ -62,7 +66,7 @@ public final class AutoCheckin {
     // five short sessions a day instead of one on every app open.
     private static final int MAX_TRIES_PER_DAY = 5;
     // Background sessions have their own budget, so they never use up the ones for app opens.
-    private static final int MAX_BG_TRIES_PER_DAY = 3;
+    static final int MAX_BG_TRIES_PER_DAY = 3;
     private static final long BG_CLOSE_DELAY_MS = 4_000L;
     private static final long TICK_MS = 1500L;
     private static final long SESSION_TIMEOUT_MS = 120_000L;
@@ -121,6 +125,7 @@ public final class AutoCheckin {
             return;
         }
         SharedPreferences prefs = activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        showBackgroundStatus(activity, prefs);
         String today = today();
         if (today.equals(prefs.getString(KEY_DONE_DAY, ""))) {
             Log.i(TAG, "START skipped, already done " + today);
@@ -180,6 +185,66 @@ public final class AutoCheckin {
 
     static boolean backgroundRunning() {
         return sSession != null && sSession.host.background();
+    }
+
+    static SharedPreferences prefs(Context context) {
+        return context.getApplicationContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+    }
+
+    static boolean doneToday(Context context) {
+        return today().equals(prefs(context).getString(KEY_DONE_DAY, ""));
+    }
+
+    static int backgroundTriesToday(Context context) {
+        SharedPreferences prefs = prefs(context);
+        return today().equals(prefs.getString(KEY_BG_TRY_DAY, "")) ? prefs.getInt(KEY_BG_TRIES, 0) : 0;
+    }
+
+    static boolean signedOutToday(Context context) {
+        return today().equals(prefs(context).getString(KEY_BG_SIGNED_OUT_DAY, ""));
+    }
+
+    static void recordBackground(Context context, String status) {
+        prefs(context).edit()
+            .putString(KEY_BG_STATUS, status)
+            .putLong(KEY_BG_STATUS_AT, System.currentTimeMillis())
+            .commit();
+        Log.i(TAG, "BG status " + status);
+    }
+
+    static String clock(long at) {
+        SimpleDateFormat format = new SimpleDateFormat("d MMM HH:mm", Locale.US);
+        return format.format(new Date(at));
+    }
+
+    /**
+     * On each app open, say once what the last background run did, or that it hasn't run although
+     * its time has long passed. Without a cable this is the only way to see the background side.
+     */
+    private static void showBackgroundStatus(Activity activity, SharedPreferences prefs) {
+        try {
+            if (!CheckinJobService.declared(activity)) return;
+            long now = System.currentTimeMillis();
+            long at = prefs.getLong(KEY_BG_STATUS_AT, 0L);
+            long shown = prefs.getLong(KEY_BG_STATUS_SHOWN_AT, 0L);
+            long planned = prefs.getLong(CheckinJobService.KEY_PLANNED_AT, 0L);
+            String text = null;
+            if (at > shown) {
+                text = "background check-in " + clock(at) + ": " + prefs.getString(KEY_BG_STATUS, "?");
+            } else if (planned > 0 && planned > at && planned > shown && now - planned > 2L * 60L * 60L * 1000L) {
+                text = "background check-in has not run yet, it was due " + clock(planned)
+                    + ". Check that ROX's battery setting is not Restricted or Deep sleeping.";
+            }
+            if (text == null) {
+                Log.i(TAG, "STATUS nothing new");
+                return;
+            }
+            prefs.edit().putLong(KEY_BG_STATUS_SHOWN_AT, now).apply();
+            Log.i(TAG, "STATUS shown " + text);
+            Toast.makeText(activity.getApplicationContext(), "ROX patch: " + text, Toast.LENGTH_LONG).show();
+        } catch (Throwable t) {
+            Log.w(TAG, "STATUS_ERR " + t);
+        }
     }
 
     private static String today() {
@@ -248,6 +313,9 @@ public final class AutoCheckin {
         boolean retapped = false;
         boolean finished = false;
         boolean claimed = false;
+        boolean already = false;
+        boolean sawLogin = false;
+        String seen = "nothing yet";
 
         Session(Host host, Runnable onDone) {
             this.host = host;
@@ -269,7 +337,11 @@ public final class AutoCheckin {
             if (now - startedAt > SESSION_TIMEOUT_MS) {
                 Log.w(TAG, "TIMEOUT phase " + phase);
                 if (phase == Phase.WAIT_HOME) {
-                    end("not signed in or home not reached", false);
+                    if (sawLogin) {
+                        end("not signed in", false);
+                    } else {
+                        end("home screen didn't appear (" + seen + ")", false);
+                    }
                     return;
                 }
                 end("Daily check-in timed out, will retry next time", true);
@@ -278,16 +350,22 @@ public final class AutoCheckin {
             handler.postDelayed(this, TICK_MS);
 
             if (!host.ready()) {
+                seen = "app screen not ready";
                 Log.i(TAG, "TICK no FlutterView yet");
                 return;
             }
-            if (!enableSemantics()) return;
+            if (!enableSemantics()) {
+                seen = "screen reader view not ready";
+                return;
+            }
 
             List<Node> nodes = readTree();
             if (nodes.isEmpty()) {
+                seen = "blank screen";
                 Log.i(TAG, "TICK semantics tree empty");
                 return;
             }
+            seen = nodes.size() + " items on screen";
 
             switch (phase) {
                 case WAIT_HOME: waitHome(nodes, now); break;
@@ -304,6 +382,7 @@ public final class AutoCheckin {
                 return;
             }
             if (anyContains(nodes, LOGIN_LABELS)) {
+                sawLogin = true;
                 if (host.background()) {
                     Log.i(TAG, "HOME login screen in background, giving up");
                     end("not signed in", false);
@@ -349,6 +428,7 @@ public final class AutoCheckin {
             }
             if (anyContains(nodes, ALREADY_LABELS) && now - phaseAt >= ENTRY_TILE_WAIT_MS) {
                 Log.i(TAG, "BUTTON absent, screen says already checked in");
+                already = true;
                 markDone();
                 leaveStreakScreen();
                 end("Already checked in today", true);
@@ -357,7 +437,7 @@ public final class AutoCheckin {
             if (now - phaseAt >= BUTTON_WAIT_MS) {
                 Log.w(TAG, "BUTTON not found on streak screen, nodes " + nodes.size());
                 leaveStreakScreen();
-                end("Couldn't find the Check-in button", true);
+                end("Couldn't find the Check-in button (" + seen + ")", true);
             }
         }
 
@@ -389,6 +469,7 @@ public final class AutoCheckin {
         void pressButton(List<Node> nodes, Node button, long now) {
             if (button.disabled()) {
                 Log.i(TAG, "BUTTON disabled, treating as already checked in");
+                already = true;
                 markDone();
                 leaveStreakScreen();
                 end("Already checked in today", true);
@@ -457,6 +538,8 @@ public final class AutoCheckin {
         void markDone() {
             host.context().getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
                 .putString(KEY_DONE_DAY, today()).commit();
+            // The background job has nothing left to do today; move it to tomorrow.
+            if (!host.background()) CheckinJobService.planNext(host.context());
         }
 
         void end(String message, boolean toast) {
@@ -466,8 +549,14 @@ public final class AutoCheckin {
             if (sSession == this) sSession = null;
             Log.i(TAG, "END " + message + (host.background() ? " (background)" : ""));
             restoreSemantics();
-            // In the background only a real check-in is worth a toast; misses retry quietly later.
-            if (host.background()) toast = toast && claimed;
+            // In the background the result goes to a notification and to the status shown on the
+            // next app open instead of a toast.
+            if (host.background()) {
+                toast = false;
+                reportBackground(message);
+            } else if (claimed || already) {
+                Notices.clear(host.context());
+            }
             if (toast && message != null) {
                 try {
                     Toast.makeText(host.context().getApplicationContext(), "ROX patch: " + message, Toast.LENGTH_LONG).show();
@@ -483,6 +572,28 @@ public final class AutoCheckin {
                         if (onDone != null) onDone.run();
                     }
                 }, claimed ? BG_CLOSE_DELAY_MS : 0L);
+            }
+        }
+
+        void reportBackground(String message) {
+            Context context = host.context();
+            String text = message == null ? "stopped" : message;
+            if (text.equals("not signed in")) {
+                prefs(context).edit().putString(KEY_BG_SIGNED_OUT_DAY, today()).commit();
+            }
+            recordBackground(context, text);
+            if (claimed) {
+                Notices.done(context, "Checked in for you in the background at "
+                    + clock(System.currentTimeMillis()) + ".");
+                return;
+            }
+            if (already) {
+                Notices.clear(context);
+                return;
+            }
+            // Retries stay quiet; only the last miss of the day asks for a tap.
+            if (backgroundTriesToday(context) >= MAX_BG_TRIES_PER_DAY || signedOutToday(context)) {
+                Notices.needsYou(context, "Background try: " + text + ".");
             }
         }
 

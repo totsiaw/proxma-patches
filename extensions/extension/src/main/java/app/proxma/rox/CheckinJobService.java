@@ -7,59 +7,146 @@ import android.app.job.JobScheduler;
 import android.app.job.JobService;
 import android.content.ComponentName;
 import android.content.Context;
+import android.content.pm.PackageManager;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 
+import java.util.Calendar;
+import java.util.Random;
+import java.util.TimeZone;
+
 /**
- * Runs the daily check-in without opening ROX. A periodic job, set up the first time the app is
- * opened, wakes the app every few hours; if today's check-in is not done yet it starts the app's
- * Flutter code off-screen and presses Check-in there (see AutoCheckin). Once today is done, the
- * remaining runs that day return straight away. The job survives reboots; force-stopping ROX or
- * swiping it away on some phones cancels it until ROX is opened again.
+ * Runs the daily check-in without opening ROX. A one-off job is planned for shortly after the ROX
+ * day starts (midnight, Pakistan time); when it runs and today's check-in is not done yet, it
+ * starts the app's Flutter code off-screen and presses Check-in there (see AutoCheckin). After a
+ * miss it tries again two hours later, up to three times a day, then plans tomorrow. Once today is
+ * done, from the background or from an app open, the next job is tomorrow, so ROX is woken at
+ * most a few times a day instead of every few hours. The job survives reboots; force-stopping ROX
+ * cancels it until ROX is opened again.
  */
 public final class CheckinJobService extends JobService {
 
     private static final String TAG = "PROXMA_ROX";
     private static final int JOB_ID = 0x52_4f_58_01;
-    private static final long PERIOD_MS = 3L * 60L * 60L * 1000L;
-    private static final long FLEX_MS = 60L * 60L * 1000L;
+    static final String KEY_PLANNED_AT = "bg_planned_at";
+    private static final long MINUTE = 60L * 1000L;
+    private static final long FIRST_DELAY_MS = 20L * MINUTE;
+    private static final long RETRY_DELAY_MS = 120L * MINUTE;
+    private static final long DAY_START_OFFSET_MS = 15L * MINUTE;
+    private static final int DAY_START_SPREAD_MIN = 45;
+
+    private static Boolean sDeclared;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
 
     public static void onActivityCreate(Activity activity) {
         try {
             if (activity == null) return;
-            schedule(activity.getApplicationContext());
+            ensurePlanned(activity.getApplicationContext());
         } catch (Throwable t) {
             Log.w(TAG, "BGJOB_ENTRY_ERR " + t);
         }
     }
 
-    private static void schedule(Context context) {
-        JobScheduler scheduler = (JobScheduler) context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
-        if (scheduler == null) {
-            Log.w(TAG, "BGJOB no job scheduler");
-            return;
+    /** True when the background patch added this service to the manifest. */
+    static boolean declared(Context context) {
+        if (sDeclared != null) return sDeclared;
+        try {
+            context.getPackageManager().getServiceInfo(
+                new ComponentName(context, CheckinJobService.class), 0);
+            sDeclared = true;
+        } catch (PackageManager.NameNotFoundException e) {
+            sDeclared = false;
+        } catch (Throwable t) {
+            return false;
         }
-        // Rescheduling on every app open would restart the period each time, so keep a matching job.
+        return sDeclared;
+    }
+
+    /** On app open: keep a planned one-off job, replace the old every-3-hours job or plan one. */
+    private static void ensurePlanned(Context context) {
+        JobScheduler scheduler = scheduler(context);
+        if (scheduler == null) return;
         JobInfo pending = scheduler.getPendingJob(JOB_ID);
-        if (pending != null && pending.getIntervalMillis() == PERIOD_MS && pending.isPersisted()) {
-            Log.i(TAG, "BGJOB already scheduled");
+        if (pending != null && !pending.isPeriodic()) {
+            Log.i(TAG, "BGJOB already planned for " + AutoCheckin.clock(
+                AutoCheckin.prefs(context).getLong(KEY_PLANNED_AT, 0L)));
             return;
         }
+        if (pending != null) Log.i(TAG, "BGJOB replacing the old repeating job");
+        planNext(context);
+    }
+
+    /** Plans the next run from today's state: tomorrow when done, else soon or after a retry gap. */
+    static void planNext(Context context) {
+        try {
+            if (!declared(context)) return;
+            long delay;
+            String why;
+            if (AutoCheckin.doneToday(context)) {
+                delay = untilTomorrow();
+                why = "done today";
+            } else if (AutoCheckin.signedOutToday(context)) {
+                delay = untilTomorrow();
+                why = "signed out";
+            } else {
+                int tries = AutoCheckin.backgroundTriesToday(context);
+                if (tries >= AutoCheckin.MAX_BG_TRIES_PER_DAY) {
+                    delay = untilTomorrow();
+                    why = "tries used up";
+                } else {
+                    delay = tries == 0 ? FIRST_DELAY_MS : RETRY_DELAY_MS;
+                    // A retry must not cross into the next day's first run.
+                    delay = Math.min(delay, untilTomorrow());
+                    why = "not done yet, earlier tries " + tries;
+                }
+            }
+            schedule(context, delay, why);
+        } catch (Throwable t) {
+            Log.w(TAG, "BGJOB_PLAN_ERR " + t);
+        }
+    }
+
+    private static long untilTomorrow() {
+        Calendar next = Calendar.getInstance(TimeZone.getTimeZone("Asia/Karachi"));
+        next.add(Calendar.DAY_OF_YEAR, 1);
+        next.set(Calendar.HOUR_OF_DAY, 0);
+        next.set(Calendar.MINUTE, 0);
+        next.set(Calendar.SECOND, 0);
+        next.set(Calendar.MILLISECOND, 0);
+        long spread = new Random().nextInt(DAY_START_SPREAD_MIN) * MINUTE;
+        return Math.max(MINUTE, next.getTimeInMillis() - System.currentTimeMillis() + DAY_START_OFFSET_MS + spread);
+    }
+
+    private static JobScheduler scheduler(Context context) {
+        JobScheduler scheduler = (JobScheduler) context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
+        if (scheduler == null) Log.w(TAG, "BGJOB no job scheduler");
+        return scheduler;
+    }
+
+    private static void schedule(Context context, long delayMs, String why) {
+        JobScheduler scheduler = scheduler(context);
+        if (scheduler == null) return;
         JobInfo info = new JobInfo.Builder(JOB_ID, new ComponentName(context, CheckinJobService.class))
-            .setPeriodic(PERIOD_MS, FLEX_MS)
+            .setMinimumLatency(delayMs)
             .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
             .setRequiresBatteryNotLow(true)
             .setPersisted(true)
             .build();
         int result = scheduler.schedule(info);
-        Log.i(TAG, result == JobScheduler.RESULT_SUCCESS ? "BGJOB scheduled every 3h" : "BGJOB schedule failed " + result);
+        long at = System.currentTimeMillis() + delayMs;
+        if (result == JobScheduler.RESULT_SUCCESS) {
+            AutoCheckin.prefs(context).edit().putLong(KEY_PLANNED_AT, at).apply();
+            Log.i(TAG, "BGJOB planned for " + AutoCheckin.clock(at) + " (" + why + ")");
+        } else {
+            Log.w(TAG, "BGJOB plan failed " + result + " (" + why + ")");
+        }
     }
 
     @Override public boolean onStartJob(final JobParameters params) {
         Log.i(TAG, "BGJOB start");
+        final Context context = getApplicationContext();
         try {
             boolean started = AutoCheckin.startBackground(this, new Runnable() {
                 @Override public void run() {
@@ -69,12 +156,26 @@ public final class CheckinJobService extends JobService {
                     } catch (Throwable t) {
                         Log.w(TAG, "BGJOB_FINISH_ERR " + t);
                     }
+                    // Same job id: plan only after this run is finished, or it would be stopped.
+                    planNext(context);
                 }
             });
-            if (!started) Log.i(TAG, "BGJOB nothing to do");
+            if (!started) {
+                Log.i(TAG, "BGJOB nothing to do");
+                handler.post(new Runnable() {
+                    @Override public void run() {
+                        planNext(context);
+                    }
+                });
+            }
             return started;
         } catch (Throwable t) {
             Log.w(TAG, "BGJOB_START_ERR " + t);
+            handler.post(new Runnable() {
+                @Override public void run() {
+                    planNext(context);
+                }
+            });
             return false;
         }
     }
@@ -86,6 +187,7 @@ public final class CheckinJobService extends JobService {
                 AutoCheckin.stopBackground("job stopped by the system");
             }
         });
+        // Ending the session plans the next run itself, so the system must not retry this one.
         return false;
     }
 }

@@ -37,11 +37,13 @@ private val checkinJobServiceManifestPatch = resourcePatch {
 @Suppress("unused")
 val backgroundCheckinPatch = bytecodePatch(
     name = "Auto check-in in the background",
-    description = "Does the daily streak check-in without you opening ROX. Every few hours ROX is woken up " +
-        "in the background; if today's check-in isn't done yet, the app's own screens are started off-screen " +
-        "and the Check-in button is pressed there, then everything is closed again. A short \"ROX patch\" " +
-        "message shows when it worked. You must be signed in, and ROX must have been opened once after " +
-        "installing. Force-stopping ROX stops it until the next time you open the app.",
+    description = "Does the daily streak check-in without you opening ROX. Shortly after midnight " +
+        "(Pakistan time) ROX is woken up once in the background; if today's check-in isn't done yet, the " +
+        "app's own screens are started off-screen and the Check-in button is pressed there, then everything " +
+        "is closed again. It retries up to three times a day. A notification says when it worked, or asks " +
+        "you to tap it if it couldn't; the next time you open ROX a short message also says what the last " +
+        "background try did. You must be signed in, and ROX must have been opened once after installing. " +
+        "Force-stopping ROX stops it until the next time you open the app.",
 ) {
     compatibleWith(COMPATIBILITY_ROX)
     extendWith("extensions/extension.mpe")
