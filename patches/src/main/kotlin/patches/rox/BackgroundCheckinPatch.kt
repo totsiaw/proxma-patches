@@ -12,6 +12,7 @@ import org.w3c.dom.Element
 
 private const val JOB_SERVICE_CLASS = "Lapp/proxma/rox/CheckinJobService;"
 private const val JOB_SERVICE = "app.proxma.rox.CheckinJobService"
+private const val ALARM_RECEIVER = "app.proxma.rox.CheckinAlarm"
 
 private val checkinJobServiceManifestPatch = resourcePatch {
     finalize {
@@ -30,6 +31,19 @@ private val checkinJobServiceManifestPatch = resourcePatch {
                     },
                 )
             }
+            // The wake-up alarm that starts the check-in on time while Doze holds the job back.
+            val receivers = doc.getElementsByTagName("receiver")
+            if ((0 until receivers.length).none {
+                    (receivers.item(it) as Element).getAttribute("android:name") == ALARM_RECEIVER
+                }
+            ) {
+                application.appendChild(
+                    doc.createElement("receiver").apply {
+                        setAttribute("android:name", ALARM_RECEIVER)
+                        setAttribute("android:exported", "false")
+                    },
+                )
+            }
         }
     }
 }
@@ -38,7 +52,8 @@ private val checkinJobServiceManifestPatch = resourcePatch {
 val backgroundCheckinPatch = bytecodePatch(
     name = "Auto check-in in the background",
     description = "Does the daily streak check-in without you opening ROX. Shortly after midnight " +
-        "(Pakistan time) ROX is woken up once in the background; if today's check-in isn't done yet, the " +
+        "(Pakistan time) ROX is woken up once in the background, by an alarm that also fires while the phone " +
+        "sleeps; if today's check-in isn't done yet, the " +
         "app's own screens are started off-screen and the Check-in button is pressed there, then everything " +
         "is closed again. It retries up to three times a day. A notification says when it worked, or asks " +
         "you to tap it if it couldn't; the next time you open ROX a short message also says what the last " +

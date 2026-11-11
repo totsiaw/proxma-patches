@@ -258,7 +258,11 @@ public final class AutoCheckin {
             if (at > shown) {
                 text = "background check-in " + clock(at) + ": " + prefs.getString(KEY_BG_STATUS, "?");
             } else if (planned > 0 && planned > at && planned > shown && now - planned > 2L * 60L * 60L * 1000L) {
-                text = "background check-in has not run yet, it was due " + clock(planned)
+                long fired = prefs.getLong(CheckinAlarm.KEY_ALARM_FIRED_AT, 0L);
+                String alarm = fired >= planned - 60_000L
+                    ? "the wake-up alarm fired " + clock(fired) + " but the check-in didn't start"
+                    : "the wake-up alarm (" + prefs.getString(CheckinAlarm.KEY_ALARM_KIND, "not set") + ") didn't fire";
+                text = "background check-in has not run yet, it was due " + clock(planned) + "; " + alarm
                     + ". Check that ROX's battery setting is not Restricted or Deep sleeping.";
             }
             if (text == null) {

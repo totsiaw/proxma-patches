@@ -8,6 +8,7 @@ import android.app.job.JobService;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -29,6 +30,8 @@ public final class CheckinJobService extends JobService {
 
     private static final String TAG = "PROXMA_ROX";
     private static final int JOB_ID = 0x52_4f_58_01;
+    // A second id for the run the wake-up alarm asks for, so it never replaces the planned job.
+    private static final int NOW_JOB_ID = 0x52_4f_58_02;
     static final String KEY_PLANNED_AT = "bg_planned_at";
     private static final long MINUTE = 60L * 1000L;
     private static final long FIRST_DELAY_MS = 20L * MINUTE;
@@ -70,8 +73,13 @@ public final class CheckinJobService extends JobService {
         if (scheduler == null) return;
         JobInfo pending = scheduler.getPendingJob(JOB_ID);
         if (pending != null && !pending.isPeriodic()) {
-            Log.i(TAG, "BGJOB already planned for " + AutoCheckin.clock(
-                AutoCheckin.prefs(context).getLong(KEY_PLANNED_AT, 0L)));
+            long at = AutoCheckin.prefs(context).getLong(KEY_PLANNED_AT, 0L);
+            Log.i(TAG, "BGJOB already planned for " + AutoCheckin.clock(at));
+            // Builds before the wake-up alarm planned only the job; add the alarm for the same time.
+            if (at > System.currentTimeMillis()
+                && AutoCheckin.prefs(context).getLong(CheckinAlarm.KEY_ALARM_SET_AT, 0L) != at) {
+                CheckinAlarm.set(context, at);
+            }
             return;
         }
         if (pending != null) Log.i(TAG, "BGJOB replacing the old repeating job");
@@ -142,10 +150,43 @@ public final class CheckinJobService extends JobService {
         } else {
             Log.w(TAG, "BGJOB plan failed " + result + " (" + why + ")");
         }
+        // Doze holds the job back at night; the alarm fires on time and starts a run itself.
+        // Whichever comes first does the check-in, the other then finds nothing to do.
+        CheckinAlarm.set(context, at);
+    }
+
+    /** From the wake-up alarm: run now as an expedited job, which Doze does not hold back. */
+    static void runNow(Context context) {
+        JobScheduler scheduler = scheduler(context);
+        if (scheduler == null) return;
+        ComponentName service = new ComponentName(context, CheckinJobService.class);
+        int result = JobScheduler.RESULT_FAILURE;
+        try {
+            result = scheduler.schedule(new JobInfo.Builder(NOW_JOB_ID, service)
+                .setExpedited(true)
+                .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+                .build());
+        } catch (Throwable t) {
+            Log.w(TAG, "BGJOB expedited not accepted " + t);
+        }
+        if (result == JobScheduler.RESULT_SUCCESS) {
+            Log.i(TAG, "BGJOB expedited run asked for");
+            return;
+        }
+        // Out of expedited quota: a plain job with no delay, which runs at the next chance.
+        try {
+            result = scheduler.schedule(new JobInfo.Builder(NOW_JOB_ID, service)
+                .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+                .build());
+            Log.i(TAG, "BGJOB plain run asked for, result " + result);
+        } catch (Throwable t) {
+            Log.w(TAG, "BGJOB_NOW_ERR " + t);
+        }
     }
 
     @Override public boolean onStartJob(final JobParameters params) {
-        Log.i(TAG, "BGJOB start");
+        Log.i(TAG, "BGJOB start, " + (params.getJobId() == NOW_JOB_ID ? "from the wake-up alarm" : "planned run")
+            + (Build.VERSION.SDK_INT >= 31 && params.isExpeditedJob() ? ", expedited" : ""));
         final Context context = getApplicationContext();
         try {
             boolean started = AutoCheckin.startBackground(this, new Runnable() {
