@@ -173,8 +173,34 @@ public final class AutoCheckin {
             return true;
         } catch (Throwable t) {
             Log.w(TAG, "BG_START_ERR " + t);
-            if (sSession != null && sSession.host.background()) sSession.end("background start failed", false);
+            if (sSession != null && sSession.host.background()) {
+                sSession.end("background start failed", false);
+            } else {
+                // The off-screen app never started, so no session can report it. Without this the
+                // next app open would say the job never ran and blame the battery setting.
+                reportStartFailure(context.getApplicationContext(), t);
+            }
             return false;
+        }
+    }
+
+    private static void reportStartFailure(Context context, Throwable error) {
+        try {
+            Throwable cause = error;
+            while (cause.getCause() != null && cause.getCause() != cause) cause = cause.getCause();
+            String detail = cause.getClass().getSimpleName();
+            String message = cause.getMessage();
+            if (message != null && !message.isEmpty()) {
+                detail += ": " + (message.length() > 80 ? message.substring(0, 80) : message);
+            }
+            String text = "couldn't start ROX off-screen (" + detail + ")";
+            Log.w(TAG, "BG start failure recorded, " + text);
+            recordBackground(context, text);
+            if (backgroundTriesToday(context) >= MAX_BG_TRIES_PER_DAY) {
+                Notices.needsYou(context, "Background try: " + text + ".");
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "BG_REPORT_ERR " + t);
         }
     }
 
