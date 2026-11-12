@@ -620,8 +620,11 @@ public final class AutoCheckin {
             if (text.equals("not signed in")) {
                 prefs(context).edit().putString(KEY_BG_SIGNED_OUT_DAY, today()).commit();
             }
-            if (!claimed && !already && !shown.isEmpty()) {
-                text = text + "; screen showed " + shown;
+            if (!claimed && !already) {
+                if (!shown.isEmpty()) text = text + "; screen showed " + shown;
+                // How far the off-screen app got, so a miss can be traced from a screenshot.
+                String diag = host.diag();
+                if (diag != null && !diag.isEmpty()) text = text + " [" + diag + "]";
             }
             recordBackground(context, text);
             if (claimed) {
@@ -763,6 +766,8 @@ public final class AutoCheckin {
         boolean background();
         boolean owns(Activity activity);
         void close();
+        /** A short account of how far the off-screen app got; empty for the app's own screen. */
+        String diag();
     }
 
     /** The app's own screen: its FlutterView and its engine. */
@@ -808,6 +813,10 @@ public final class AutoCheckin {
         }
 
         @Override public void close() {}
+
+        @Override public String diag() {
+            return "";
+        }
     }
 
     /**
@@ -815,6 +824,12 @@ public final class AutoCheckin {
      * ImageReader that is drained and thrown away, gets a phone-sized viewport and the resumed
      * lifecycle, and gets the two native channels MainActivity adds. The semantics tree comes from
      * an AccessibilityBridge on a detached view, the same class FlutterView uses for it.
+     *
+     * Without an Activity nothing answers the engine's own "flutter/platform" channel: its handler
+     * comes from PlatformPlugin, which only an Activity creates, and with no handler the channel
+     * drops each call without replying. ROX's startup awaits SystemChrome.setPreferredOrientations,
+     * so its first screen never came and the semantics tree stayed empty ("blank screen"). A
+     * stand-in handler now answers those calls the way a hidden screen would.
      */
     private static final class HeadlessHost implements Host {
         final Context context;
@@ -826,6 +841,9 @@ public final class AutoCheckin {
         AccessibilityNodeProvider bridge;
         ImageReader reader;
         boolean closed = false;
+        int frames = 0;
+        boolean platformAnswered = false;
+        MessageSpy spy;
 
         HeadlessHost(Context context) throws Exception {
             this.context = context;
@@ -878,7 +896,10 @@ public final class AutoCheckin {
                 @Override public void onImageAvailable(ImageReader source) {
                     try {
                         Image image = source.acquireLatestImage();
-                        if (image != null) image.close();
+                        if (image != null) {
+                            image.close();
+                            frames++;
+                        }
                     } catch (Throwable ignored) {
                     }
                 }
@@ -913,6 +934,18 @@ public final class AutoCheckin {
                     context.getSystemService(Context.ACCESSIBILITY_SERVICE), context.getContentResolver(),
                     call(engine, "getPlatformViewsControllerDelegator"));
 
+            answerPlatformChannel();
+            watchMessages();
+
+            // On from the start, so the very first frame the app draws already carries the tree.
+            // The bridge above has just turned it off because no screen reader is running.
+            try {
+                renderer.getClass().getMethod("setSemanticsEnabled", boolean.class).invoke(renderer, true);
+                Log.i(TAG, "BG semantics on before the app starts");
+            } catch (Throwable t) {
+                Log.w(TAG, "BG early semantics failed " + t);
+            }
+
             Object lifecycle = call(engine, "getLifecycleChannel");
             call(lifecycle, "appIsResumed");
             call(lifecycle, "aWindowIsFocused");
@@ -935,6 +968,62 @@ public final class AutoCheckin {
                 setHandler.invoke(channel, handler);
             }
             Log.i(TAG, "BG native channels added");
+        }
+
+        /** Gives "flutter/platform" a handler, as PlatformPlugin does for the app's own screen. */
+        private void answerPlatformChannel() {
+            try {
+                Object channel = call(engine, "getPlatformChannel");
+                Class<?> handlerClass = Class.forName(
+                    "io.flutter.embedding.engine.systemchannels.PlatformChannel$PlatformMessageHandler");
+                Object stub = Proxy.newProxyInstance(handlerClass.getClassLoader(), new Class<?>[] {handlerClass},
+                    new PlatformStub());
+                channel.getClass().getMethod("setPlatformMessageHandler", handlerClass).invoke(channel, stub);
+                platformAnswered = true;
+                Log.i(TAG, "BG platform channel answered");
+            } catch (Throwable t) {
+                Log.w(TAG, "BG platform channel stand-in failed " + t);
+            }
+        }
+
+        /** Notes which channels the app's Dart code calls, for the report when a run misses. */
+        private void watchMessages() {
+            try {
+                Object jni = field(engine, "flutterJNI");
+                Object original = field(jni, "platformMessageHandler");
+                if (original == null) {
+                    Log.w(TAG, "BG no message handler to watch");
+                    return;
+                }
+                Class<?> handlerClass = Class.forName("io.flutter.embedding.engine.dart.PlatformMessageHandler");
+                spy = new MessageSpy(original);
+                Object proxy = Proxy.newProxyInstance(handlerClass.getClassLoader(), new Class<?>[] {handlerClass}, spy);
+                jni.getClass().getMethod("setPlatformMessageHandler", handlerClass).invoke(jni, proxy);
+                Log.i(TAG, "BG watching app messages");
+            } catch (Throwable t) {
+                spy = null;
+                Log.w(TAG, "BG message watch failed " + t);
+            }
+        }
+
+        @Override public String diag() {
+            StringBuilder out = new StringBuilder();
+            boolean running = false;
+            try {
+                if (engine != null) {
+                    running = (Boolean) call(call(engine, "getDartExecutor"), "isExecutingDart");
+                }
+            } catch (Throwable ignored) {
+            }
+            out.append("app code ").append(running ? "running" : "not running");
+            out.append(", frames ").append(frames);
+            out.append(", system calls ").append(platformAnswered ? "answered" : "unanswered");
+            if (spy != null) {
+                out.append(", app messages ").append(spy.count);
+                String last = spy.last();
+                if (!last.isEmpty()) out.append(", last: ").append(last);
+            }
+            return out.toString();
         }
 
         @Override public Context context() {
@@ -999,6 +1088,130 @@ public final class AutoCheckin {
             }
             engine = null;
             bridge = null;
+        }
+    }
+
+    /**
+     * Stands in for PlatformPlugin off-screen. The channel replies success once a handler method
+     * returns, so each call only has to return quietly; nothing here touches a window.
+     */
+    private static final class PlatformStub implements InvocationHandler {
+        @Override public Object invoke(Object proxy, Method method, Object[] args) {
+            String name = method.getName();
+            if (name.equals("hashCode")) return System.identityHashCode(proxy);
+            if (name.equals("equals")) return args != null && proxy == args[0];
+            if (name.equals("toString")) return "proxma-platform";
+            Log.i(TAG, "BG platform call " + name);
+            Class<?> type = method.getReturnType();
+            if (type == boolean.class) return Boolean.FALSE;
+            if (type == int.class) return 0;
+            if (type == long.class) return 0L;
+            if (type == float.class) return 0f;
+            return null;
+        }
+    }
+
+    /**
+     * Wraps the engine's DartMessenger: every message the Dart side sends goes on to it unchanged,
+     * and the last few channel names (with the method for method channels) are kept for the report.
+     */
+    private static final class MessageSpy implements InvocationHandler {
+        final Object original;
+        final String[] recent = new String[5];
+        int next = 0;
+        int count = 0;
+
+        MessageSpy(Object original) {
+            this.original = original;
+        }
+
+        @Override public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+            String name = method.getName();
+            if (name.equals("hashCode")) return System.identityHashCode(proxy);
+            if (name.equals("equals")) return args != null && proxy == args[0];
+            if (name.equals("toString")) return "proxma-spy";
+            if (name.equals("handleMessageFromDart") && args != null && args.length >= 2) {
+                try {
+                    note((String) args[0], (java.nio.ByteBuffer) args[1]);
+                } catch (Throwable ignored) {
+                }
+            }
+            try {
+                return method.invoke(original, args);
+            } catch (java.lang.reflect.InvocationTargetException e) {
+                throw e.getCause() != null ? e.getCause() : e;
+            }
+        }
+
+        private void note(String channel, java.nio.ByteBuffer message) {
+            count++;
+            if (channel == null) return;
+            String entry = channel.replace("dev.flutter.pigeon.", "").replace("plugins.flutter.io/", "");
+            String called = methodOf(message);
+            if (called != null) entry = entry + "." + called;
+            if (!handled(channel)) entry = entry + " (no handler)";
+            if (entry.length() > 48) entry = entry.substring(entry.length() - 48);
+            int prev = (next + recent.length - 1) % recent.length;
+            if (entry.equals(recent[prev])) return;
+            recent[next] = entry;
+            next = (next + 1) % recent.length;
+        }
+
+        private boolean handled(String channel) {
+            try {
+                Object handlers = field(original, "messageHandlers");
+                return !(handlers instanceof Map) || ((Map<?, ?>) handlers).containsKey(channel);
+            } catch (Throwable t) {
+                return true;
+            }
+        }
+
+        String last() {
+            StringBuilder out = new StringBuilder();
+            for (int i = 0; i < recent.length; i++) {
+                String entry = recent[(next + i) % recent.length];
+                if (entry == null) continue;
+                if (out.length() > 0) out.append(" | ");
+                out.append(entry);
+            }
+            return out.toString();
+        }
+
+        /** The method name of a standard or JSON method call, read without moving the buffer. */
+        private static String methodOf(java.nio.ByteBuffer message) {
+            if (message == null) return null;
+            int start = message.position();
+            int end = message.limit();
+            if (end - start < 2) return null;
+            int type = message.get(start) & 0xff;
+            if (type == 7) {
+                int at = start + 1;
+                int size = message.get(at) & 0xff;
+                at++;
+                if (size == 254) {
+                    if (end - at < 2) return null;
+                    size = (message.get(at) & 0xff) | ((message.get(at + 1) & 0xff) << 8);
+                    at += 2;
+                } else if (size == 255) {
+                    return null;
+                }
+                if (size <= 0 || size > 80 || at + size > end) return null;
+                byte[] bytes = new byte[size];
+                for (int i = 0; i < size; i++) bytes[i] = message.get(at + i);
+                return new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+            }
+            if (type == '{') {
+                int length = Math.min(end - start, 160);
+                byte[] bytes = new byte[length];
+                for (int i = 0; i < length; i++) bytes[i] = message.get(start + i);
+                String text = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+                int key = text.indexOf("\"method\":\"");
+                if (key < 0) return null;
+                int from = key + 10;
+                int to = text.indexOf('"', from);
+                return to > from ? text.substring(from, to) : null;
+            }
+            return null;
         }
     }
 
