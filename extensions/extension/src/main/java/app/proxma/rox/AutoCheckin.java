@@ -621,10 +621,11 @@ public final class AutoCheckin {
                 prefs(context).edit().putString(KEY_BG_SIGNED_OUT_DAY, today()).commit();
             }
             if (!claimed && !already) {
-                if (!shown.isEmpty()) text = text + "; screen showed " + shown;
-                // How far the off-screen app got, so a miss can be traced from a screenshot.
+                // How far the off-screen app got, led first so even a collapsed notification shows
+                // the crux (frames drawn, app code running, the call it is stuck on) in a screenshot.
                 String diag = host.diag();
-                if (diag != null && !diag.isEmpty()) text = text + " [" + diag + "]";
+                if (diag != null && !diag.isEmpty()) text = diag + " — " + text;
+                if (!shown.isEmpty()) text = text + "; screen showed " + shown;
             }
             recordBackground(context, text);
             if (claimed) {
