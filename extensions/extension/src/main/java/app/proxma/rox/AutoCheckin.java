@@ -1109,6 +1109,8 @@ public final class AutoCheckin {
             if (tracker != null) {
                 String waiting = tracker.waiting();
                 out.append(waiting.isEmpty() ? ", no call left unanswered" : ", still waiting on: " + waiting);
+                String stood = tracker.stoodIn();
+                if (!stood.isEmpty()) out.append(", answered for the app: ").append(stood);
             }
             return out.toString();
         }
@@ -1145,6 +1147,7 @@ public final class AutoCheckin {
         @Override public void close() {
             if (closed) return;
             closed = true;
+            if (tracker != null) tracker.stopped = true;
             try {
                 if (bridge != null) bridge.getClass().getMethod("release").invoke(bridge);
             } catch (Throwable t) {
@@ -1302,11 +1305,38 @@ public final class AutoCheckin {
         }
     }
 
-    /** The calls from the app's Dart code that have not been answered yet, oldest first. */
+    /**
+     * The calls from the app's Dart code that have not been answered yet, oldest first. A call left
+     * unanswered for STAND_IN_MS is answered on the plugin's behalf with an empty success, since
+     * off-screen a plugin that waits for an Activity never replies and the app's startup, which
+     * awaits it, would stay stuck before its first screen.
+     */
     private static final class ReplyTracker {
+        static final long STAND_IN_MS = 12_000L;
+        final Handler main = new Handler(Looper.getMainLooper());
+        volatile boolean stopped = false;
         private final Map<Integer, String> open = new java.util.LinkedHashMap<>();
         private final Map<Integer, Long> since = new java.util.HashMap<>();
+        private final List<String> stoodIn = new ArrayList<>();
+        private int stoodInCount = 0;
         private int next = 0;
+
+        synchronized void noteStoodIn(String label) {
+            stoodInCount++;
+            if (!stoodIn.contains(label) && stoodIn.size() < 3) stoodIn.add(label);
+        }
+
+        /** The calls answered on the app's behalf, or empty when none were. */
+        synchronized String stoodIn() {
+            if (stoodInCount == 0) return "";
+            StringBuilder out = new StringBuilder();
+            for (String label : stoodIn) {
+                if (out.length() > 0) out.append(" | ");
+                out.append(label);
+            }
+            if (stoodInCount > stoodIn.size()) out.append(" (").append(stoodInCount).append(" in all)");
+            return out.toString();
+        }
 
         /** Returns the id to close the call with, or -1 once 64 are open (the oldest are what blocks). */
         synchronized int start(String label) {
@@ -1359,15 +1389,21 @@ public final class AutoCheckin {
             if (name.equals("equals")) return args != null && proxy == args[0];
             if (name.equals("toString")) return "proxma-tracked-" + channel;
             int id = -1;
+            java.util.concurrent.atomic.AtomicBoolean answered = null;
             if (name.equals("onMessage") && args != null && args.length == 2 && args[1] != null) {
                 try {
+                    java.nio.ByteBuffer message = (java.nio.ByteBuffer) args[0];
                     String label = channel.replace("dev.flutter.pigeon.", "").replace("plugins.flutter.io/", "");
-                    String called = MessageSpy.methodOf((java.nio.ByteBuffer) args[0]);
+                    String called = MessageSpy.methodOf(message);
                     if (called != null) label = label + "." + called;
                     if (label.length() > 48) label = label.substring(label.length() - 48);
                     id = tracker.start(label);
                     final Object reply = args[1];
                     final int open = id;
+                    final String callLabel = label;
+                    final byte[] standIn = standInReply(channel, message);
+                    final java.util.concurrent.atomic.AtomicBoolean once = new java.util.concurrent.atomic.AtomicBoolean(false);
+                    answered = once;
                     Class<?> replyClass = Class.forName("io.flutter.plugin.common.BinaryMessenger$BinaryReply");
                     args[1] = Proxy.newProxyInstance(replyClass.getClassLoader(), new Class<?>[] {replyClass},
                         new InvocationHandler() {
@@ -1376,6 +1412,10 @@ public final class AutoCheckin {
                                 if (n.equals("hashCode")) return System.identityHashCode(self);
                                 if (n.equals("equals")) return a != null && self == a[0];
                                 if (n.equals("toString")) return "proxma-reply";
+                                if (once.getAndSet(true)) {
+                                    Log.i(TAG, "BG late reply dropped " + callLabel);
+                                    return null;
+                                }
                                 tracker.done(open);
                                 try {
                                     return m.invoke(reply, a);
@@ -1384,6 +1424,27 @@ public final class AutoCheckin {
                                 }
                             }
                         });
+                    tracker.main.postDelayed(new Runnable() {
+                        @Override public void run() {
+                            if (tracker.stopped || once.getAndSet(true)) return;
+                            tracker.done(open);
+                            tracker.noteStoodIn(callLabel);
+                            try {
+                                java.nio.ByteBuffer out = null;
+                                if (standIn != null) {
+                                    out = java.nio.ByteBuffer.allocateDirect(standIn.length);
+                                    out.put(standIn);
+                                }
+                                // Through the public interface: the messenger's own reply class is private.
+                                Class.forName("io.flutter.plugin.common.BinaryMessenger$BinaryReply")
+                                    .getMethod("reply", java.nio.ByteBuffer.class).invoke(reply, out);
+                                Log.w(TAG, "BG answered for the app after "
+                                    + (ReplyTracker.STAND_IN_MS / 1000L) + "s: " + callLabel);
+                            } catch (Throwable t) {
+                                Log.w(TAG, "BG stand-in reply failed " + callLabel + " " + t);
+                            }
+                        }
+                    }, ReplyTracker.STAND_IN_MS);
                 } catch (Throwable t) {
                     Log.w(TAG, "BG track error " + channel + " " + t);
                 }
@@ -1393,8 +1454,24 @@ public final class AutoCheckin {
             } catch (java.lang.reflect.InvocationTargetException e) {
                 // The messenger answers a handler that throws with an empty reply itself.
                 if (id > 0) tracker.done(id);
+                if (answered != null) answered.set(true);
                 throw e.getCause() != null ? e.getCause() : e;
             }
+        }
+
+        /**
+         * An empty success in the codec the call came in: [0, null] for a standard method call,
+         * "[null]" for a JSON one, a one-item list [null] for a Pigeon or other message channel.
+         * Null (an empty reply) when the codec can't be told.
+         */
+        static byte[] standInReply(String channel, java.nio.ByteBuffer message) {
+            if (channel.startsWith("dev.flutter.pigeon.")) return new byte[] {12, 1, 0};
+            if (message == null || message.limit() - message.position() < 1) return null;
+            int type = message.get(message.position()) & 0xff;
+            if (type == 7) return new byte[] {0, 0};
+            if (type == '{') return "[null]".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            if (type == 12) return new byte[] {12, 1, 0};
+            return null;
         }
     }
 
