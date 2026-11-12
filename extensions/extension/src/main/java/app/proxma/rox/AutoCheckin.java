@@ -844,6 +844,7 @@ public final class AutoCheckin {
         int frames = 0;
         boolean platformAnswered = false;
         MessageSpy spy;
+        ReplyTracker tracker;
 
         HeadlessHost(Context context) throws Exception {
             this.context = context;
@@ -936,6 +937,8 @@ public final class AutoCheckin {
 
             answerPlatformChannel();
             watchMessages();
+            sendSettings();
+            trackReplies();
 
             // On from the start, so the very first frame the app draws already carries the tree.
             // The bridge above has just turned it off because no screen reader is running.
@@ -986,6 +989,86 @@ public final class AutoCheckin {
             }
         }
 
+        /**
+         * Sends the phone's languages and text, clock and theme settings, as FlutterView does when
+         * it is attached. With no view the off-screen app otherwise starts with no locale at all.
+         */
+        private void sendSettings() {
+            android.content.res.Configuration config = context.getResources().getConfiguration();
+            try {
+                Object localization = call(engine, "getLocalizationPlugin");
+                localization.getClass().getMethod("sendLocalesToFlutter", android.content.res.Configuration.class)
+                    .invoke(localization, config);
+                Log.i(TAG, "BG locales sent");
+            } catch (Throwable t) {
+                Log.w(TAG, "BG locales failed " + t);
+            }
+            try {
+                Object builder = call(call(engine, "getSettingsChannel"), "startMessage");
+                Class<?> builderClass = builder.getClass();
+                builderClass.getMethod("setTextScaleFactor", float.class)
+                    .invoke(builder, config.fontScale > 0 ? config.fontScale : 1f);
+                builderClass.getMethod("setUse24HourFormat", boolean.class)
+                    .invoke(builder, android.text.format.DateFormat.is24HourFormat(context));
+                builderClass.getMethod("setBrieflyShowPassword", boolean.class).invoke(builder, true);
+                builderClass.getMethod("setNativeSpellCheckServiceDefined", boolean.class).invoke(builder, false);
+                boolean dark = (config.uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
+                    == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+                Class<?> brightness = Class.forName(
+                    "io.flutter.embedding.engine.systemchannels.SettingsChannel$PlatformBrightness");
+                builderClass.getMethod("setPlatformBrightness", brightness)
+                    .invoke(builder, brightness.getField(dark ? "dark" : "light").get(null));
+                builderClass.getMethod("setDisplayMetrics", DisplayMetrics.class)
+                    .invoke(builder, context.getResources().getDisplayMetrics());
+                call(builder, "send");
+                Log.i(TAG, "BG settings sent");
+            } catch (Throwable t) {
+                Log.w(TAG, "BG settings failed " + t);
+            }
+        }
+
+        /**
+         * Wraps every handler registered so far so each call from the app's Dart code is noted until
+         * it is answered. A run that misses then names the calls the app was still waiting on, which
+         * is where its startup stopped.
+         */
+        @SuppressWarnings("unchecked")
+        private void trackReplies() {
+            try {
+                Object messenger = field(call(engine, "getDartExecutor"), "dartMessenger");
+                Object lock = field(messenger, "handlersLock");
+                Map<String, Object> handlers = (Map<String, Object>) field(messenger, "messageHandlers");
+                Class<?> infoClass = Class.forName("io.flutter.embedding.engine.dart.DartMessenger$HandlerInfo");
+                Class<?> handlerClass = Class.forName("io.flutter.plugin.common.BinaryMessenger$BinaryMessageHandler");
+                Class<?> queueClass = Class.forName(
+                    "io.flutter.embedding.engine.dart.DartMessenger$DartMessengerTaskQueue");
+                java.lang.reflect.Constructor<?> make = infoClass.getDeclaredConstructor(handlerClass, queueClass);
+                make.setAccessible(true);
+                Field handlerField = infoClass.getDeclaredField("handler");
+                handlerField.setAccessible(true);
+                Field queueField = infoClass.getDeclaredField("taskQueue");
+                queueField.setAccessible(true);
+                tracker = new ReplyTracker();
+                int wrapped = 0;
+                synchronized (lock) {
+                    for (Map.Entry<String, Object> entry : handlers.entrySet()) {
+                        Object info = entry.getValue();
+                        Object original = handlerField.get(info);
+                        if (original == null || Proxy.isProxyClass(original.getClass())
+                            && Proxy.getInvocationHandler(original) instanceof TrackedHandler) continue;
+                        Object proxy = Proxy.newProxyInstance(handlerClass.getClassLoader(), new Class<?>[] {handlerClass},
+                            new TrackedHandler(entry.getKey(), original, tracker));
+                        entry.setValue(make.newInstance(proxy, queueField.get(info)));
+                        wrapped++;
+                    }
+                }
+                Log.i(TAG, "BG tracking replies on " + wrapped + " channels");
+            } catch (Throwable t) {
+                tracker = null;
+                Log.w(TAG, "BG reply tracking failed " + t);
+            }
+        }
+
         /** Notes which channels the app's Dart code calls, for the report when a run misses. */
         private void watchMessages() {
             try {
@@ -1022,6 +1105,10 @@ public final class AutoCheckin {
                 out.append(", app messages ").append(spy.count);
                 String last = spy.last();
                 if (!last.isEmpty()) out.append(", last: ").append(last);
+            }
+            if (tracker != null) {
+                String waiting = tracker.waiting();
+                out.append(waiting.isEmpty() ? ", no call left unanswered" : ", still waiting on: " + waiting);
             }
             return out.toString();
         }
@@ -1212,6 +1299,102 @@ public final class AutoCheckin {
                 return to > from ? text.substring(from, to) : null;
             }
             return null;
+        }
+    }
+
+    /** The calls from the app's Dart code that have not been answered yet, oldest first. */
+    private static final class ReplyTracker {
+        private final Map<Integer, String> open = new java.util.LinkedHashMap<>();
+        private final Map<Integer, Long> since = new java.util.HashMap<>();
+        private int next = 0;
+
+        /** Returns the id to close the call with, or -1 once 64 are open (the oldest are what blocks). */
+        synchronized int start(String label) {
+            if (open.size() >= 64) return -1;
+            int id = ++next;
+            open.put(id, label);
+            since.put(id, SystemClock.uptimeMillis());
+            return id;
+        }
+
+        synchronized void done(int id) {
+            open.remove(id);
+            since.remove(id);
+        }
+
+        /** Up to three calls left unanswered for at least five seconds, with their age. */
+        synchronized String waiting() {
+            long now = SystemClock.uptimeMillis();
+            StringBuilder out = new StringBuilder();
+            int count = 0;
+            for (Map.Entry<Integer, String> entry : open.entrySet()) {
+                Long at = since.get(entry.getKey());
+                if (at == null || now - at < 5_000L) continue;
+                if (count < 3) {
+                    if (out.length() > 0) out.append(" | ");
+                    out.append(entry.getValue()).append(' ').append((now - at) / 1000L).append('s');
+                }
+                count++;
+            }
+            if (count > 3) out.append(" (+").append(count - 3).append(" more)");
+            return out.toString();
+        }
+    }
+
+    /** Passes each message on to the original handler and notes it as open until it is answered. */
+    private static final class TrackedHandler implements InvocationHandler {
+        final String channel;
+        final Object original;
+        final ReplyTracker tracker;
+
+        TrackedHandler(String channel, Object original, ReplyTracker tracker) {
+            this.channel = channel;
+            this.original = original;
+            this.tracker = tracker;
+        }
+
+        @Override public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+            String name = method.getName();
+            if (name.equals("hashCode")) return System.identityHashCode(proxy);
+            if (name.equals("equals")) return args != null && proxy == args[0];
+            if (name.equals("toString")) return "proxma-tracked-" + channel;
+            int id = -1;
+            if (name.equals("onMessage") && args != null && args.length == 2 && args[1] != null) {
+                try {
+                    String label = channel.replace("dev.flutter.pigeon.", "").replace("plugins.flutter.io/", "");
+                    String called = MessageSpy.methodOf((java.nio.ByteBuffer) args[0]);
+                    if (called != null) label = label + "." + called;
+                    if (label.length() > 48) label = label.substring(label.length() - 48);
+                    id = tracker.start(label);
+                    final Object reply = args[1];
+                    final int open = id;
+                    Class<?> replyClass = Class.forName("io.flutter.plugin.common.BinaryMessenger$BinaryReply");
+                    args[1] = Proxy.newProxyInstance(replyClass.getClassLoader(), new Class<?>[] {replyClass},
+                        new InvocationHandler() {
+                            @Override public Object invoke(Object self, Method m, Object[] a) throws Throwable {
+                                String n = m.getName();
+                                if (n.equals("hashCode")) return System.identityHashCode(self);
+                                if (n.equals("equals")) return a != null && self == a[0];
+                                if (n.equals("toString")) return "proxma-reply";
+                                tracker.done(open);
+                                try {
+                                    return m.invoke(reply, a);
+                                } catch (java.lang.reflect.InvocationTargetException e) {
+                                    throw e.getCause() != null ? e.getCause() : e;
+                                }
+                            }
+                        });
+                } catch (Throwable t) {
+                    Log.w(TAG, "BG track error " + channel + " " + t);
+                }
+            }
+            try {
+                return method.invoke(original, args);
+            } catch (java.lang.reflect.InvocationTargetException e) {
+                // The messenger answers a handler that throws with an empty reply itself.
+                if (id > 0) tracker.done(id);
+                throw e.getCause() != null ? e.getCause() : e;
+            }
         }
     }
 
