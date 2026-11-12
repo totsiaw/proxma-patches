@@ -104,6 +104,7 @@ public final class AutoCheckin {
         try {
             if (activity == null) return;
             sMain = new WeakReference<>(activity);
+            WakeScreen.onCreate(activity);
             if (sSession != null && sSession.host.background()) {
                 Log.i(TAG, "ENTRY app opened, stopping background session");
                 sSession.end("app opened during background session", false);
@@ -124,16 +125,29 @@ public final class AutoCheckin {
             Log.i(TAG, "START skipped, session running");
             return;
         }
+        if (WakeScreen.closing(activity)) {
+            Log.i(TAG, "START skipped, the screen opened for the check-in is closing");
+            return;
+        }
+        boolean woken = WakeScreen.woken(activity);
         SharedPreferences prefs = activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        showBackgroundStatus(activity, prefs);
+        if (!woken) showBackgroundStatus(activity, prefs);
         String today = today();
         if (today.equals(prefs.getString(KEY_DONE_DAY, ""))) {
             Log.i(TAG, "START skipped, already done " + today);
+            if (woken) {
+                recordBackground(activity, "Daily check-in done in the background");
+                WakeScreen.close(activity, 0L);
+            }
             return;
         }
         int tries = today.equals(prefs.getString(KEY_TRY_DAY, "")) ? prefs.getInt(KEY_TRIES, 0) : 0;
         if (tries >= MAX_TRIES_PER_DAY) {
             Log.i(TAG, "START skipped, tries used up " + tries);
+            if (woken) {
+                recordBackground(activity, "ROX's screen opened, but today's tries were used up");
+                WakeScreen.close(activity, 0L);
+            }
             return;
         }
         Log.i(TAG, "START session, earlier tries today " + tries);
@@ -167,6 +181,21 @@ public final class AutoCheckin {
                 return false;
             }
             prefs.edit().putString(KEY_BG_TRY_DAY, today).putInt(KEY_BG_TRIES, tries + 1).commit();
+            // ROX's own screen is where the check-in is known to work, so open it when Android
+            // allows that; the off-screen run below is only for when it doesn't.
+            String route = WakeScreen.open(app);
+            if (route != null) {
+                Log.i(TAG, "BG opened ROX's screen (" + route + "), earlier background tries today " + tries);
+                // Replaced by the screen's own result as soon as it opens.
+                recordBackground(app, "asked Android to open ROX's screen (" + route + ") but it didn't open"
+                    + (route.equals("full-screen notice")
+                        ? "; if the phone was in use, the notice needed a tap" : ""));
+                if (onDone != null) {
+                    // Keep the job until the backup notice has had its chance.
+                    new Handler(Looper.getMainLooper()).postDelayed(onDone, WakeScreen.BACKUP_NOTICE_MS + 5_000L);
+                }
+                return true;
+            }
             Log.i(TAG, "BG start session, earlier background tries today " + tries);
             sSession = new Session(new HeadlessHost(app), onDone);
             sSession.run();
@@ -250,6 +279,7 @@ public final class AutoCheckin {
     private static void showBackgroundStatus(Activity activity, SharedPreferences prefs) {
         try {
             if (!CheckinJobService.declared(activity)) return;
+            WakeScreen.askIfNeeded(activity);
             long now = System.currentTimeMillis();
             long at = prefs.getLong(KEY_BG_STATUS_AT, 0L);
             long shown = prefs.getLong(KEY_BG_STATUS_SHOWN_AT, 0L);
@@ -354,9 +384,14 @@ public final class AutoCheckin {
         // The first few texts on the last screen read, so a miss says which screen it was stuck on.
         String shown = "";
 
+        // ROX's screen, opened by the background run: it reports like the background and closes itself.
+        final boolean woken;
+
         Session(Host host, Runnable onDone) {
             this.host = host;
             this.onDone = onDone;
+            this.woken = host instanceof ActivityHost && WakeScreen.woken(((ActivityHost) host).activity);
+            if (woken) Log.i(TAG, "START session on the screen the background run opened");
         }
 
         @Override public void run() {
@@ -421,7 +456,7 @@ public final class AutoCheckin {
             }
             if (anyContains(nodes, LOGIN_LABELS)) {
                 sawLogin = true;
-                if (host.background()) {
+                if (host.background() || woken) {
                     Log.i(TAG, "HOME login screen in background, giving up");
                     end("not signed in", false);
                     return;
@@ -542,7 +577,7 @@ public final class AutoCheckin {
                     }
                 }
             }, 1200L);
-            end(host.background() ? "Daily check-in done in the background" : "Daily check-in done", true);
+            end(host.background() || woken ? "Daily check-in done in the background" : "Daily check-in done", true);
         }
 
         void openStreakRoute(long now) {
@@ -593,6 +628,9 @@ public final class AutoCheckin {
             if (host.background()) {
                 toast = false;
                 reportBackground(message);
+            } else if (woken) {
+                toast = false;
+                reportWoken(message);
             } else if (claimed || already) {
                 Notices.clear(host.context());
             }
@@ -641,6 +679,40 @@ public final class AutoCheckin {
             if (backgroundTriesToday(context) >= MAX_BG_TRIES_PER_DAY || signedOutToday(context)) {
                 Notices.needsYou(context, "Background try: " + text + ".");
             }
+        }
+
+        /**
+         * The result of a check-in on the screen the background run opened. It goes where a
+         * background result goes, and the screen then closes, unless it only went away (paused,
+         * stopped) and comes back on its own, which starts a fresh session.
+         */
+        void reportWoken(String message) {
+            Activity activity = ((ActivityHost) host).activity;
+            Context context = activity.getApplicationContext();
+            String text = message == null ? "stopped" : message;
+            if (text.equals("paused") || text.equals("stopped") || text.equals("destroyed")) {
+                recordBackground(context, "ROX's screen opened but went away before the check-in finished ("
+                    + text + ")" + (shown.isEmpty() ? "" : "; screen showed " + shown));
+                return;
+            }
+            if (text.equals("not signed in")) {
+                prefs(context).edit().putString(KEY_BG_SIGNED_OUT_DAY, today()).commit();
+            }
+            if (!claimed && !already) {
+                text = text + " (on ROX's screen, opened for it)";
+                if (!shown.isEmpty()) text = text + "; screen showed " + shown;
+            }
+            recordBackground(context, text);
+            if (claimed) {
+                Notices.done(context, "Checked in for you at " + clock(System.currentTimeMillis())
+                    + "; ROX opened for a moment to do it.");
+            } else if (already) {
+                Notices.clear(context);
+            } else if (backgroundTriesToday(context) >= MAX_BG_TRIES_PER_DAY || signedOutToday(context)) {
+                Notices.needsYou(context, "Background try: " + text + ".");
+            }
+            // Give the app a moment to finish the request it just sent before the screen goes.
+            WakeScreen.close(activity, claimed ? BG_CLOSE_DELAY_MS : 1_500L);
         }
 
         boolean enableSemantics() {
