@@ -1,7 +1,7 @@
 {
-  "created_at": "2026-11-12T18:00:00",
-  "description": "Test build for issue #59 (ROX): the background check-in now opens ROX's own screen for a moment over the lock screen, presses Check-in there and closes again, instead of trying off-screen. If ROX can't open itself, a notification asks you to turn on \"Appear on top\" for ROX.",
-  "download_url": "https://github.com/totsiaw/proxma-patches/releases/download/test-issue-59-r28/patches-rox-test-r28.mpp",
+  "created_at": "2026-11-14T20:00:00",
+  "description": "Test build for issue #59 (ROX): newer Android only lets \"Appear on top\" open ROX from the background while ROX has a window on screen, so a 1-pixel window now goes up just before the background check-in opens ROX. If ROX still can't open, the notification says whether the phone was locked, and a tap reminder follows.",
+  "download_url": "https://github.com/totsiaw/proxma-patches/releases/download/test-issue-59-r29/patches-rox-test-r29.mpp",
   "signature_download_url": "",
-  "version": "1.28.1-test.28"
+  "version": "1.28.1-test.29"
 }
