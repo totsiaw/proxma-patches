@@ -66,6 +66,7 @@ val unlockDailyRewardPatch = bytecodePatch(
         "upstream of both the popup and the rewarded ad.",
 ) {
     compatibleWith(COMPATIBILITY_MYZONG)
+    dependsOn(fixSplitInstallPatch)
 
     execute {
         // Primary fix: force areEqual(activeGameNo,"1") result to 0 so the existing `if-eqz` always
