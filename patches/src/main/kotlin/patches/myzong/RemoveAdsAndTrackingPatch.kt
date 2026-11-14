@@ -277,7 +277,7 @@ val removeAdsAndTrackingPatch = bytecodePatch(
         "Pushwoosh push is left intact. The app then phones home only to its own Zong API.",
 ) {
     compatibleWith(COMPATIBILITY_MYZONG)
-    dependsOn(disableAutoCollectionResourcePatch)
+    dependsOn(fixSplitInstallPatch, disableAutoCollectionResourcePatch)
 
     execute {
         // Each stub is best-effort so a method absent in some build doesn't fail the whole patch.
