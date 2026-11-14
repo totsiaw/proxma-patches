@@ -13,6 +13,10 @@ internal val COMPATIBILITY_MYZONG = Compatibility(
     signatures = emptySet(),
     targets = listOf(
         AppTarget(
+            version = "5.20.20.121",
+            minSdk = 21,
+        ),
+        AppTarget(
             version = "5.19.19.112",
             minSdk = 21,
         ),
