@@ -1,6 +1,7 @@
 package app.proxma.rox;
 
 import android.app.Activity;
+import android.app.KeyguardManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -9,12 +10,18 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.graphics.PixelFormat;
+import android.hardware.display.DisplayManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.provider.Settings;
 import android.util.Log;
+import android.view.Display;
+import android.view.Gravity;
+import android.view.View;
 import android.view.WindowManager;
 
 import java.lang.ref.WeakReference;
@@ -30,7 +37,9 @@ import java.lang.ref.WeakReference;
  * "Appear on top" (SYSTEM_ALERT_WINDOW), which the user grants once in Settings, and a full-screen
  * notification (USE_FULL_SCREEN_INTENT), which opens the screen straight away while the phone is
  * locked or asleep and otherwise shows as a heads-up notice to tap. When neither is allowed the old
- * off-screen run is used and ROX asks once, on an app open, for "Appear on top".
+ * off-screen run is used and ROX asks once, on an app open, for "Appear on top". Since Android 15
+ * "Appear on top" only counts while the app has an overlay window on screen, so a 1-pixel window
+ * is put up just before the start and taken down once the screen opens.
  */
 final class WakeScreen {
 
@@ -42,6 +51,7 @@ final class WakeScreen {
     private static final int REQUEST_OPEN = 0x524f5806;
     private static final int REQUEST_ASK = 0x524f5807;
     static final String KEY_ASKED_AT = "wake_asked_at";
+    static final String KEY_FS_ASKED_AT = "wake_fs_asked_at";
     static final String KEY_OPEN_ASKED_AT = "wake_open_asked_at";
     static final String KEY_OPENED_AT = "wake_opened_at";
     private static final String ROUTE_OVERLAY = "appear on top";
@@ -98,37 +108,162 @@ final class WakeScreen {
             return null;
         }
         final long at = System.currentTimeMillis();
+        final boolean overlay = canAppearOnTop(app);
+        final boolean full = canFullScreen(app);
         String route = null;
-        if (canAppearOnTop(app)) {
-            try {
-                app.startActivity(intent);
-                route = ROUTE_OVERLAY;
-                Log.i(TAG, "WAKE screen started directly (appear on top)");
-            } catch (Throwable t) {
-                Log.w(TAG, "WAKE direct start failed " + t);
-            }
-        }
-        if (canFullScreen(app)) {
-            if (route == null) {
-                postFullScreen(app, intent);
-                route = ROUTE_NOTICE;
-            } else {
-                // Android can drop a background start without saying so; the notice backs it up.
-                sHandler.postDelayed(new Runnable() {
-                    @Override public void run() {
-                        if (openedSince(app, at)) return;
-                        Log.w(TAG, "WAKE screen didn't open after the direct start, posting the notice");
-                        postFullScreen(app, intent);
-                    }
-                }, BACKUP_NOTICE_MS);
-            }
+        if (overlay) {
+            // Since Android 15 "Appear on top" only lets an app open a screen from the background
+            // while one of its overlay windows is on screen; without one Android drops the start
+            // silently (r28 on the reporter's phone). So put up a 1-pixel window first.
+            route = ROUTE_OVERLAY;
+            startOnTop(app, intent, at);
+        } else if (full) {
+            postFullScreen(app, intent);
+            route = ROUTE_NOTICE;
         }
         if (route != null) {
             AutoCheckin.prefs(app).edit().putLong(KEY_OPEN_ASKED_AT, at).commit();
+            // Android can drop a background start without saying so: check, back it up, and say why.
+            sHandler.postDelayed(new Runnable() {
+                @Override public void run() {
+                    afterOpen(app, intent, at, overlay, full);
+                }
+            }, BACKUP_NOTICE_MS);
         } else {
             Log.i(TAG, "WAKE no way to open the screen from the background");
         }
         return route;
+    }
+
+    private static View sHelper;
+    private static WindowManager sHelperWm;
+    private static String sHelperState = "not used";
+    private static int sStarts = 0;
+
+    /** Puts up the helper window, then starts ROX's screen once it is on screen, and once more later. */
+    private static void startOnTop(final Context app, final Intent intent, final long at) {
+        sStarts = 0;
+        boolean shown = showHelper(app);
+        long first = shown ? 600L : 0L;
+        final Runnable start = new Runnable() {
+            @Override public void run() {
+                if (openedSince(app, at)) return;
+                sStarts++;
+                if (sHelper != null) {
+                    sHelperState = sHelper.isAttachedToWindow()
+                        ? (sHelper.getWindowVisibility() == View.VISIBLE ? "on screen" : "added but hidden by Android")
+                        : "added but never attached";
+                }
+                try {
+                    app.startActivity(intent);
+                    Log.i(TAG, "WAKE screen start " + sStarts + " asked (appear on top, helper window "
+                        + sHelperState + ")");
+                } catch (Throwable t) {
+                    Log.w(TAG, "WAKE direct start " + sStarts + " failed " + t);
+                }
+            }
+        };
+        sHandler.postDelayed(start, first);
+        sHandler.postDelayed(start, first + 4_000L);
+    }
+
+    private static boolean showHelper(Context app) {
+        removeHelper();
+        try {
+            Context context = app;
+            if (Build.VERSION.SDK_INT >= 30) {
+                DisplayManager displays = (DisplayManager) app.getSystemService(Context.DISPLAY_SERVICE);
+                Display display = displays != null ? displays.getDisplay(Display.DEFAULT_DISPLAY) : null;
+                if (display != null) {
+                    context = app.createDisplayContext(display)
+                        .createWindowContext(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, null);
+                }
+            }
+            WindowManager wm = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
+            if (wm == null) {
+                sHelperState = "no window manager";
+                Log.w(TAG, "WAKE helper window: no window manager");
+                return false;
+            }
+            View view = new View(context);
+            view.setBackgroundColor(0x01000000);
+            @SuppressWarnings("deprecation")
+            int type = Build.VERSION.SDK_INT >= 26
+                ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                : WindowManager.LayoutParams.TYPE_PHONE;
+            @SuppressWarnings("deprecation")
+            int flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+                | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+                | WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED;
+            WindowManager.LayoutParams params = new WindowManager.LayoutParams(1, 1, type, flags,
+                PixelFormat.TRANSLUCENT);
+            params.gravity = Gravity.TOP | Gravity.START;
+            params.setTitle("ROX check-in helper");
+            wm.addView(view, params);
+            sHelper = view;
+            sHelperWm = wm;
+            sHelperState = "added";
+            Log.i(TAG, "WAKE helper window added");
+            return true;
+        } catch (Throwable t) {
+            sHelperState = "not allowed (" + t.getClass().getSimpleName() + ")";
+            Log.w(TAG, "WAKE helper window failed " + t);
+            return false;
+        }
+    }
+
+    private static void removeHelper() {
+        View view = sHelper;
+        WindowManager wm = sHelperWm;
+        sHelper = null;
+        sHelperWm = null;
+        if (view == null || wm == null) return;
+        try {
+            wm.removeViewImmediate(view);
+            Log.i(TAG, "WAKE helper window removed");
+        } catch (Throwable t) {
+            Log.w(TAG, "WAKE helper window remove failed " + t);
+        }
+    }
+
+    /** A while after asking: done if the screen opened, else back it up and record why it didn't. */
+    private static void afterOpen(Context app, Intent intent, long at, boolean overlay, boolean full) {
+        removeHelper();
+        if (openedSince(app, at)) {
+            Log.i(TAG, "WAKE screen opened, nothing to back up");
+            return;
+        }
+        String phone = phoneState(app);
+        String text;
+        if (overlay) {
+            text = "asked Android " + sStarts + "x to open ROX's screen (appear on top, helper window "
+                + sHelperState + ") but it didn't open; " + phone;
+            if (full) {
+                postFullScreen(app, intent);
+                text += "; posted the full-screen notice instead";
+            } else {
+                text += "; full-screen notices aren't allowed for ROX";
+            }
+        } else {
+            text = "posted the full-screen notice but ROX's screen didn't open on its own; " + phone;
+        }
+        Log.w(TAG, "WAKE screen didn't open: " + text);
+        AutoCheckin.recordBackground(app, text);
+        if (!(overlay && full)) Notices.needsYou(app, "ROX couldn't open itself in the background.");
+    }
+
+    private static String phoneState(Context app) {
+        try {
+            KeyguardManager keyguard = (KeyguardManager) app.getSystemService(Context.KEYGUARD_SERVICE);
+            PowerManager power = (PowerManager) app.getSystemService(Context.POWER_SERVICE);
+            String locked = keyguard == null ? "lock unknown" : keyguard.isKeyguardLocked() ? "phone locked" : "phone unlocked";
+            String screen = power == null ? "screen unknown" : power.isInteractive() ? "screen on" : "screen off";
+            return locked + ", " + screen;
+        } catch (Throwable t) {
+            return "phone state unknown";
+        }
     }
 
     static boolean openedSince(Context context, long at) {
@@ -191,6 +326,7 @@ final class WakeScreen {
                     | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
             }
             cancelNotice(activity);
+            removeHelper();
             AutoCheckin.prefs(activity).edit().putLong(KEY_OPENED_AT, System.currentTimeMillis()).commit();
             Log.i(TAG, "WAKE screen opened by the background run, shown over the lock screen");
             return true;
@@ -248,18 +384,29 @@ final class WakeScreen {
     static void askIfNeeded(Context context) {
         try {
             Context app = context.getApplicationContext();
-            if (route(app) != null) {
+            // "Appear on top" is on but full-screen notices aren't: those are what open ROX while
+            // the phone is locked, where Android hides the helper window. Ask once in a while too.
+            boolean askFullScreen = Build.VERSION.SDK_INT >= 34 && canAppearOnTop(app) && !canFullScreen(app);
+            String askKey = askFullScreen ? KEY_FS_ASKED_AT : KEY_ASKED_AT;
+            if (route(app) != null && !askFullScreen) {
                 NotificationManager manager = (NotificationManager) app.getSystemService(Context.NOTIFICATION_SERVICE);
                 if (manager != null) manager.cancel(ASK_ID);
                 return;
             }
             SharedPreferences prefs = AutoCheckin.prefs(app);
             long now = System.currentTimeMillis();
-            if (now - prefs.getLong(KEY_ASKED_AT, 0L) < ASK_EVERY_MS) return;
+            if (now - prefs.getLong(askKey, 0L) < ASK_EVERY_MS) return;
             NotificationManager manager = (NotificationManager) app.getSystemService(Context.NOTIFICATION_SERVICE);
             if (manager == null || !manager.areNotificationsEnabled()) return;
             Intent settings;
-            if (Build.VERSION.SDK_INT >= 23) {
+            if (askFullScreen) {
+                settings = new Intent("android.settings.MANAGE_APP_USE_FULL_SCREEN_INTENT",
+                    Uri.parse("package:" + app.getPackageName()));
+                if (settings.resolveActivity(app.getPackageManager()) == null) {
+                    settings = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.parse("package:" + app.getPackageName()));
+                }
+            } else if (Build.VERSION.SDK_INT >= 23) {
                 settings = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                     Uri.parse("package:" + app.getPackageName()));
             } else {
@@ -273,8 +420,11 @@ final class WakeScreen {
                 channel.setDescription("Result of the patched background daily check-in");
                 manager.createNotificationChannel(channel);
             }
-            String text = "To check in while you're away, ROX needs to open itself for a moment. "
-                + "Tap here and turn on \"Appear on top\" (\"Display over other apps\") for ROX.";
+            String text = askFullScreen
+                ? "To check in while the phone is locked, ROX needs to show full-screen notifications. "
+                    + "Tap here and allow \"Full screen notifications\" for ROX."
+                : "To check in while you're away, ROX needs to open itself for a moment. "
+                    + "Tap here and turn on \"Appear on top\" (\"Display over other apps\") for ROX.";
             Notification notice = new Notification.Builder(app, "proxma_rox_checkin")
                 .setSmallIcon(app.getApplicationInfo().icon != 0
                     ? app.getApplicationInfo().icon : android.R.drawable.ic_popup_reminder)
@@ -286,8 +436,8 @@ final class WakeScreen {
                 .setAutoCancel(true)
                 .build();
             manager.notify(ASK_ID, notice);
-            prefs.edit().putLong(KEY_ASKED_AT, now).apply();
-            Log.i(TAG, "WAKE asked for appear on top");
+            prefs.edit().putLong(askKey, now).apply();
+            Log.i(TAG, askFullScreen ? "WAKE asked for full-screen notices" : "WAKE asked for appear on top");
         } catch (Throwable t) {
             Log.w(TAG, "WAKE_ASK_ERR " + t);
         }
