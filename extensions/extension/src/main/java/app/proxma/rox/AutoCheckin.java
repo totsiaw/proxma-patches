@@ -192,7 +192,7 @@ public final class AutoCheckin {
                         ? "; if the phone was in use, the notice needed a tap" : ""));
                 if (onDone != null) {
                     // Keep the job until the backup notice has had its chance.
-                    new Handler(Looper.getMainLooper()).postDelayed(onDone, WakeScreen.BACKUP_NOTICE_MS + 5_000L);
+                    new Handler(Looper.getMainLooper()).postDelayed(onDone, WakeScreen.BACKUP_NOTICE_MS + 15_000L);
                 }
                 return true;
             }

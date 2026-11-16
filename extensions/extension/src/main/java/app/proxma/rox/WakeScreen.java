@@ -54,6 +54,10 @@ final class WakeScreen {
     static final String KEY_FS_ASKED_AT = "wake_fs_asked_at";
     static final String KEY_OPEN_ASKED_AT = "wake_open_asked_at";
     static final String KEY_OPENED_AT = "wake_opened_at";
+    // Any ROX screen created, marked or not: tells "Android blocked the start" apart from
+    // "a screen was made but not as the check-in screen".
+    static final String KEY_ANY_CREATED_AT = "wake_any_created_at";
+    private static final long UNMARKED_WINDOW_MS = 45_000L;
     private static final String ROUTE_OVERLAY = "appear on top";
     private static final String ROUTE_NOTICE = "full-screen notice";
     // If a direct start was blocked after all, the full-screen notice follows this much later.
@@ -110,8 +114,19 @@ final class WakeScreen {
         final long at = System.currentTimeMillis();
         final boolean overlay = canAppearOnTop(app);
         final boolean full = canFullScreen(app);
+        final String phoneAtStart = phoneState(app);
+        sPhoneAtStart = phoneAtStart;
+        sFullFirst = false;
         String route = null;
-        if (overlay) {
+        if (full && lockedOrDark(app)) {
+            // Android hides overlay windows while the lock screen shows, so the helper window can't
+            // let the start through there (r29). A full-screen notice opens the screen straight
+            // away while the phone is locked or asleep, like an alarm clock.
+            sFullFirst = true;
+            postFullScreen(app, intent);
+            route = ROUTE_NOTICE;
+            Log.i(TAG, "WAKE phone " + phoneAtStart + ", full-screen notice first");
+        } else if (overlay) {
             // Since Android 15 "Appear on top" only lets an app open a screen from the background
             // while one of its overlay windows is on screen; without one Android drops the start
             // silently (r28 on the reporter's phone). So put up a 1-pixel window first.
@@ -135,6 +150,19 @@ final class WakeScreen {
         return route;
     }
 
+    private static boolean lockedOrDark(Context app) {
+        try {
+            KeyguardManager keyguard = (KeyguardManager) app.getSystemService(Context.KEYGUARD_SERVICE);
+            PowerManager power = (PowerManager) app.getSystemService(Context.POWER_SERVICE);
+            return (keyguard != null && keyguard.isKeyguardLocked()) || (power != null && !power.isInteractive());
+        } catch (Throwable t) {
+            Log.w(TAG, "WAKE lock check failed " + t);
+            return false;
+        }
+    }
+
+    private static String sPhoneAtStart = "phone state unknown";
+    private static boolean sFullFirst = false;
     private static View sHelper;
     private static WindowManager sHelperWm;
     private static String sHelperState = "not used";
@@ -235,11 +263,30 @@ final class WakeScreen {
             Log.i(TAG, "WAKE screen opened, nothing to back up");
             return;
         }
-        String phone = phoneState(app);
+        String phone = "at start " + sPhoneAtStart + ", now " + phoneState(app);
+        long created = AutoCheckin.prefs(app).getLong(KEY_ANY_CREATED_AT, 0L);
+        String made = created >= at
+            ? "a ROX screen was made but not as the check-in screen"
+            : "no ROX screen was made";
         String text;
-        if (overlay) {
+        if (sFullFirst) {
+            text = "posted the full-screen notice (phone locked or asleep) but ROX's screen didn't open; "
+                + made + "; " + phone;
+            if (overlay && !lockedOrDark(app)) {
+                // The phone has been unlocked since: Appear on top can work now.
+                startOnTop(app, intent, at);
+                sHandler.postDelayed(new Runnable() {
+                    @Override public void run() {
+                        removeHelper();
+                    }
+                }, 8_000L);
+                text += "; trying Appear on top now the phone is unlocked";
+            } else if (!overlay) {
+                text += "; Appear on top is off for ROX";
+            }
+        } else if (overlay) {
             text = "asked Android " + sStarts + "x to open ROX's screen (appear on top, helper window "
-                + sHelperState + ") but it didn't open; " + phone;
+                + sHelperState + ") but it didn't open; " + made + "; " + phone;
             if (full) {
                 postFullScreen(app, intent);
                 text += "; posted the full-screen notice instead";
@@ -247,11 +294,12 @@ final class WakeScreen {
                 text += "; full-screen notices aren't allowed for ROX";
             }
         } else {
-            text = "posted the full-screen notice but ROX's screen didn't open on its own; " + phone;
+            text = "posted the full-screen notice but ROX's screen didn't open on its own; " + made + "; " + phone;
         }
         Log.w(TAG, "WAKE screen didn't open: " + text);
         AutoCheckin.recordBackground(app, text);
         if (!(overlay && full)) Notices.needsYou(app, "ROX couldn't open itself in the background.");
+        else if (sFullFirst && lockedOrDark(app)) Notices.needsYou(app, "ROX couldn't open itself while the phone was locked.");
     }
 
     private static String phoneState(Context app) {
@@ -273,7 +321,11 @@ final class WakeScreen {
     private static Intent launchIntent(Context app) {
         Intent intent = app.getPackageManager().getLaunchIntentForPackage(app.getPackageName());
         if (intent == null) return null;
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        // MainActivity is singleTop with an empty task affinity. With NEW_TASK alone, a ROX task
+        // left in Recents is just brought back and its screen rebuilt from the original launcher
+        // intent, so this marker was lost: the screen stayed behind the lock screen and counted
+        // as "didn't open" (r28/r29). CLEAR_TASK always builds a fresh screen from this intent.
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
         intent.putExtra(EXTRA, true);
         return intent;
     }
@@ -314,7 +366,21 @@ final class WakeScreen {
     static boolean onCreate(Activity activity) {
         try {
             Intent intent = activity.getIntent();
-            if (intent == null || !intent.getBooleanExtra(EXTRA, false)) return false;
+            boolean marked = intent != null && intent.getBooleanExtra(EXTRA, false);
+            SharedPreferences prefs = AutoCheckin.prefs(activity);
+            long now = System.currentTimeMillis();
+            prefs.edit().putLong(KEY_ANY_CREATED_AT, now).apply();
+            if (!marked) {
+                // Android can rebuild the screen from an older intent and drop the marker. A
+                // screen created right after the background run asked for one, with none opened
+                // since, is that screen.
+                long asked = prefs.getLong(KEY_OPEN_ASKED_AT, 0L);
+                boolean pending = asked > 0 && now - asked >= 0 && now - asked < UNMARKED_WINDOW_MS
+                    && prefs.getLong(KEY_OPENED_AT, 0L) < asked;
+                if (!pending) return false;
+                Log.i(TAG, "WAKE screen created without the marker " + (now - asked)
+                    + " ms after the background run asked, treating it as that screen");
+            }
             sWoken = new WeakReference<>(activity);
             if (Build.VERSION.SDK_INT >= 27) {
                 activity.setShowWhenLocked(true);
@@ -327,8 +393,9 @@ final class WakeScreen {
             }
             cancelNotice(activity);
             removeHelper();
-            AutoCheckin.prefs(activity).edit().putLong(KEY_OPENED_AT, System.currentTimeMillis()).commit();
-            Log.i(TAG, "WAKE screen opened by the background run, shown over the lock screen");
+            prefs.edit().putLong(KEY_OPENED_AT, now).commit();
+            Log.i(TAG, "WAKE screen opened by the background run (" + (marked ? "marked" : "unmarked")
+                + "), shown over the lock screen");
             return true;
         } catch (Throwable t) {
             Log.w(TAG, "WAKE_CREATE_ERR " + t);
