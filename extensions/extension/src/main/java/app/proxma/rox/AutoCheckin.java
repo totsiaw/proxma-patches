@@ -97,6 +97,8 @@ public final class AutoCheckin {
     private static volatile boolean sRegistered = false;
     private static Session sSession;
     private static WeakReference<Activity> sMain = new WeakReference<>(null);
+    // ROX screens between onStart and onStop.
+    private static int sMainVisible = 0;
 
     private AutoCheckin() {}
 
@@ -163,12 +165,22 @@ public final class AutoCheckin {
                 Log.i(TAG, "BG skipped, session running");
                 return false;
             }
+            Context app = context.getApplicationContext();
             Activity main = sMain.get();
             if (main != null && !main.isDestroyed()) {
-                Log.i(TAG, "BG skipped, app screen exists");
-                return false;
+                // A ROX screen left in the background used to skip every background run for as
+                // long as Android kept the process. Only a screen in view (someone is using ROX,
+                // and its own check-in runs) or no way to open a fresh one still skips.
+                if (sMainVisible > 0) {
+                    Log.i(TAG, "BG skipped, app screen in view");
+                    return false;
+                }
+                if (WakeScreen.route(app) == null) {
+                    Log.i(TAG, "BG skipped, app screen exists and no way to open a fresh one");
+                    return false;
+                }
+                Log.i(TAG, "BG app screen exists but is out of view, opening a fresh one");
             }
-            Context app = context.getApplicationContext();
             SharedPreferences prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
             String today = today();
             if (today.equals(prefs.getString(KEY_DONE_DAY, ""))) {
@@ -318,12 +330,30 @@ public final class AutoCheckin {
         return format.format(new Date());
     }
 
+    private static boolean isMain(Activity activity) {
+        return activity != null && activity.getClass().getName().equals("com.jazz.rox.MainActivity");
+    }
+
     private static final class Callbacks implements Application.ActivityLifecycleCallbacks {
         @Override public void onActivityResumed(Activity activity) {
             try {
-                if (activity.getClass().getName().equals("com.jazz.rox.MainActivity")) start(activity);
+                if (isMain(activity)) {
+                    WakeScreen.onShown(activity, "resumed");
+                    start(activity);
+                }
             } catch (Throwable t) {
                 Log.w(TAG, "RESUME_ERR " + t);
+            }
+        }
+
+        @Override public void onActivityStarted(Activity activity) {
+            try {
+                if (!isMain(activity)) return;
+                sMainVisible++;
+                // Before the resume, so a brought-back screen is let over the lock screen in time.
+                WakeScreen.onShown(activity, "started");
+            } catch (Throwable t) {
+                Log.w(TAG, "STARTED_ERR " + t);
             }
         }
 
@@ -332,6 +362,7 @@ public final class AutoCheckin {
         }
 
         @Override public void onActivityStopped(Activity activity) {
+            if (isMain(activity) && sMainVisible > 0) sMainVisible--;
             if (sSession != null && sSession.host.owns(activity)) sSession.end("stopped", false);
         }
 
@@ -341,7 +372,6 @@ public final class AutoCheckin {
         }
 
         @Override public void onActivityCreated(Activity activity, Bundle state) {}
-        @Override public void onActivityStarted(Activity activity) {}
         @Override public void onActivitySaveInstanceState(Activity activity, Bundle state) {}
     }
 

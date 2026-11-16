@@ -381,6 +381,44 @@ final class WakeScreen {
                 Log.i(TAG, "WAKE screen created without the marker " + (now - asked)
                     + " ms after the background run asked, treating it as that screen");
             }
+            take(activity, prefs, now, marked ? "marked" : "unmarked");
+            return true;
+        } catch (Throwable t) {
+            Log.w(TAG, "WAKE_CREATE_ERR " + t);
+            return false;
+        }
+    }
+
+    /**
+     * From the screen's start and resume: Android can bring back a ROX screen that already exists
+     * instead of making a new one, and then onCreate never runs and the marker only reaches
+     * onNewIntent. That is what the r29 report shows: a ROX screen came up at 00:25, read as an
+     * ordinary app open, and stayed behind the lock screen. A screen that comes up shortly after a
+     * background request, with none opened since, is taken as the check-in screen here too.
+     */
+    static boolean onShown(Activity activity, String when) {
+        try {
+            if (activity == null || woken(activity) || closing(activity)) return woken(activity);
+            SharedPreferences prefs = AutoCheckin.prefs(activity);
+            long now = System.currentTimeMillis();
+            long asked = prefs.getLong(KEY_OPEN_ASKED_AT, 0L);
+            boolean pending = asked > 0 && now - asked >= 0 && now - asked < UNMARKED_WINDOW_MS
+                && prefs.getLong(KEY_OPENED_AT, 0L) < asked;
+            if (!pending) return false;
+            prefs.edit().putLong(KEY_ANY_CREATED_AT, now).apply();
+            Log.i(TAG, "WAKE existing screen brought back (" + when + ") " + (now - asked)
+                + " ms after the background run asked, treating it as that screen");
+            take(activity, prefs, now, "brought back, " + when);
+            return true;
+        } catch (Throwable t) {
+            Log.w(TAG, "WAKE_SHOWN_ERR " + t);
+            return false;
+        }
+    }
+
+    /** Makes the screen the check-in screen: over the lock screen, display on, notice and helper gone. */
+    private static void take(Activity activity, SharedPreferences prefs, long now, String how) {
+        try {
             sWoken = new WeakReference<>(activity);
             if (Build.VERSION.SDK_INT >= 27) {
                 activity.setShowWhenLocked(true);
@@ -393,13 +431,11 @@ final class WakeScreen {
             }
             cancelNotice(activity);
             removeHelper();
-            prefs.edit().putLong(KEY_OPENED_AT, now).commit();
-            Log.i(TAG, "WAKE screen opened by the background run (" + (marked ? "marked" : "unmarked")
-                + "), shown over the lock screen");
-            return true;
+            Log.i(TAG, "WAKE screen opened by the background run (" + how + "), shown over the lock screen");
         } catch (Throwable t) {
-            Log.w(TAG, "WAKE_CREATE_ERR " + t);
-            return false;
+            Log.w(TAG, "WAKE_TAKE_ERR " + t);
+        } finally {
+            prefs.edit().putLong(KEY_OPENED_AT, now).commit();
         }
     }
 
