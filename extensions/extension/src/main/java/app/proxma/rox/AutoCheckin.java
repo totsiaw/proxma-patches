@@ -192,6 +192,16 @@ public final class AutoCheckin {
                 Log.i(TAG, "BG skipped, background tries used up " + tries);
                 return false;
             }
+            if (WakeScreen.shouldWaitForUnlock(app)) {
+                // Behind the lock screen Android drops every start Appear on top asks for, and
+                // full-screen notices aren't allowed: don't use up a try, run after the unlock.
+                Log.i(TAG, "BG phone locked, no full-screen notices: waiting for the unlock");
+                boolean first = !WakeScreen.waitingForUnlock(app);
+                WakeScreen.waitForUnlock(app);
+                if (first) recordBackground(app, "phone was locked; the check-in runs right after you unlock it");
+                return false;
+            }
+            WakeScreen.clearUnlockWait(app);
             prefs.edit().putString(KEY_BG_TRY_DAY, today).putInt(KEY_BG_TRIES, tries + 1).commit();
             // ROX's own screen is where the check-in is known to work, so open it when Android
             // allows that; the off-screen run below is only for when it doesn't.
@@ -267,6 +277,15 @@ public final class AutoCheckin {
         return today().equals(prefs.getString(KEY_BG_TRY_DAY, "")) ? prefs.getInt(KEY_BG_TRIES, 0) : 0;
     }
 
+    /** Gives back a background try that never got to run (the phone stayed locked). */
+    static void refundBackgroundTry(Context context) {
+        SharedPreferences prefs = prefs(context);
+        int tries = backgroundTriesToday(context);
+        if (tries <= 0) return;
+        prefs.edit().putString(KEY_BG_TRY_DAY, today()).putInt(KEY_BG_TRIES, tries - 1).commit();
+        Log.i(TAG, "BG try given back, tries today now " + (tries - 1));
+    }
+
     static boolean signedOutToday(Context context) {
         return today().equals(prefs(context).getString(KEY_BG_SIGNED_OUT_DAY, ""));
     }
@@ -324,7 +343,7 @@ public final class AutoCheckin {
         }
     }
 
-    private static String today() {
+    static String today() {
         SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
         format.setTimeZone(TimeZone.getTimeZone("Asia/Karachi"));
         return format.format(new Date());
@@ -358,6 +377,8 @@ public final class AutoCheckin {
         }
 
         @Override public void onActivityPaused(Activity activity) {
+            // A see-through check-in screen that goes away early becomes a normal screen again.
+            WakeScreen.reveal(activity);
             if (sSession != null && sSession.host.owns(activity)) sSession.end("paused", false);
         }
 
@@ -735,7 +756,8 @@ public final class AutoCheckin {
             recordBackground(context, text);
             if (claimed) {
                 Notices.done(context, "Checked in for you at " + clock(System.currentTimeMillis())
-                    + "; ROX opened for a moment to do it.");
+                    + (WakeScreen.hidden(activity) ? " in the background."
+                        : "; ROX opened for a moment to do it."));
             } else if (already) {
                 Notices.clear(context);
             } else if (backgroundTriesToday(context) >= MAX_BG_TRIES_PER_DAY || signedOutToday(context)) {

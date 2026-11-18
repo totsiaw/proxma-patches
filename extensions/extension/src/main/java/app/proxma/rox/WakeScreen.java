@@ -6,11 +6,14 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.PixelFormat;
+import android.graphics.drawable.ColorDrawable;
 import android.hardware.display.DisplayManager;
 import android.net.Uri;
 import android.os.Build;
@@ -22,6 +25,7 @@ import android.util.Log;
 import android.view.Display;
 import android.view.Gravity;
 import android.view.View;
+import android.view.Window;
 import android.view.WindowManager;
 
 import java.lang.ref.WeakReference;
@@ -67,6 +71,12 @@ final class WakeScreen {
     private static final Handler sHandler = new Handler(Looper.getMainLooper());
     private static WeakReference<Activity> sWoken = new WeakReference<>(null);
     private static WeakReference<Activity> sClosing = new WeakReference<>(null);
+    // The check-in screen made see-through, so the phone's user keeps seeing and using what they had.
+    private static WeakReference<Activity> sHidden = new WeakReference<>(null);
+    // Phone locked and nothing can open ROX over the lock screen: the check-in waits for the unlock.
+    static final String KEY_UNLOCK_WAIT_DAY = "wake_unlock_wait_day";
+    private static final long UNLOCK_SETTLE_MS = 2_500L;
+    private static BroadcastReceiver sUnlockReceiver;
 
     private WakeScreen() {}
 
@@ -281,6 +291,12 @@ final class WakeScreen {
                     }
                 }, 8_000L);
                 text += "; trying Appear on top now the phone is unlocked";
+            } else if (overlay && lockedOrDark(app)) {
+                // Still locked: Appear on top can't work behind the lock screen. Don't use up a try;
+                // check in right after the next unlock instead.
+                AutoCheckin.refundBackgroundTry(app);
+                waitForUnlock(app);
+                text += "; still locked, will check in after the next unlock";
             } else if (!overlay) {
                 text += "; Appear on top is off for ROX";
             }
@@ -298,6 +314,7 @@ final class WakeScreen {
         }
         Log.w(TAG, "WAKE screen didn't open: " + text);
         AutoCheckin.recordBackground(app, text);
+        if (waitingForUnlock(app)) return;
         if (!(overlay && full)) Notices.needsYou(app, "ROX couldn't open itself in the background.");
         else if (sFullFirst && lockedOrDark(app)) Notices.needsYou(app, "ROX couldn't open itself while the phone was locked.");
     }
@@ -325,7 +342,9 @@ final class WakeScreen {
         // left in Recents is just brought back and its screen rebuilt from the original launcher
         // intent, so this marker was lost: the screen stayed behind the lock screen and counted
         // as "didn't open" (r28/r29). CLEAR_TASK always builds a fresh screen from this intent.
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        // NO_ANIMATION: with the phone in use the screen is see-through (hide), so no slide-in either.
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK
+            | Intent.FLAG_ACTIVITY_NO_ANIMATION);
         intent.putExtra(EXTRA, true);
         return intent;
     }
@@ -431,7 +450,15 @@ final class WakeScreen {
             }
             cancelNotice(activity);
             removeHelper();
-            Log.i(TAG, "WAKE screen opened by the background run (" + how + "), shown over the lock screen");
+            if (lockedOrDark(activity)) {
+                Log.i(TAG, "WAKE screen opened by the background run (" + how + "), shown over the lock screen");
+            } else {
+                // r32: with the phone in use ROX came up over what the user was doing and they had
+                // to go back by hand. Make it see-through and let touches pass to the app behind.
+                boolean hidden = hide(activity);
+                Log.i(TAG, "WAKE screen opened by the background run (" + how + "), phone in use, "
+                    + (hidden ? "made see-through" : "couldn't make it see-through, shown as is"));
+            }
         } catch (Throwable t) {
             Log.w(TAG, "WAKE_TAKE_ERR " + t);
         } finally {
@@ -462,8 +489,13 @@ final class WakeScreen {
                         activity.setTurnScreenOn(false);
                         activity.setShowWhenLocked(false);
                     }
+                    boolean wasHidden = sHidden.get() == activity;
                     activity.finishAndRemoveTask();
-                    Log.i(TAG, "WAKE screen closed");
+                    if (wasHidden) {
+                        sHidden = new WeakReference<>(null);
+                        noAnimation(activity);
+                    }
+                    Log.i(TAG, "WAKE screen closed" + (wasHidden ? " (it was see-through)" : ""));
                 } catch (Throwable t) {
                     Log.w(TAG, "WAKE_CLOSE_ERR " + t);
                 }
@@ -477,6 +509,150 @@ final class WakeScreen {
             if (manager != null) manager.cancel(NOTICE_ID);
         } catch (Throwable t) {
             Log.w(TAG, "WAKE_CANCEL_ERR " + t);
+        }
+    }
+
+    /**
+     * Makes the check-in screen see-through and lets touches go to the app behind it. Flutter keeps
+     * drawing and its semantics tree keeps working, because the screen is still resumed and on
+     * screen (alpha just above zero, so the system still counts it as shown). Only when Android
+     * agrees to make the screen translucent; otherwise it stays as in r32.
+     */
+    private static boolean hide(Activity activity) {
+        try {
+            if (Build.VERSION.SDK_INT < 30) return false;
+            if (!activity.setTranslucent(true)) {
+                Log.i(TAG, "WAKE see-through refused by Android");
+                return false;
+            }
+            Window window = activity.getWindow();
+            window.setBackgroundDrawable(new ColorDrawable(0));
+            WindowManager.LayoutParams params = window.getAttributes();
+            params.alpha = 0.01f;
+            params.dimAmount = 0f;
+            window.setAttributes(params);
+            window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+            window.addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE);
+            sHidden = new WeakReference<>(activity);
+            return true;
+        } catch (Throwable t) {
+            Log.w(TAG, "WAKE_HIDE_ERR " + t);
+            return false;
+        }
+    }
+
+    static boolean hidden(Activity activity) {
+        return activity != null && sHidden.get() == activity;
+    }
+
+    /**
+     * A see-through check-in screen that goes away before it is done (the user switched app, a
+     * call came in) is made a normal screen again, so ROX is never left invisible.
+     */
+    static void reveal(Activity activity) {
+        if (!hidden(activity)) return;
+        // Closing after the check-in also pauses it: keep it see-through on the way out.
+        if (activity.isFinishing() || closing(activity)) return;
+        sHidden = new WeakReference<>(null);
+        try {
+            Window window = activity.getWindow();
+            window.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE);
+            WindowManager.LayoutParams params = window.getAttributes();
+            params.alpha = 1f;
+            window.setAttributes(params);
+            if (Build.VERSION.SDK_INT >= 30) activity.setTranslucent(false);
+            Log.i(TAG, "WAKE see-through screen made normal again");
+        } catch (Throwable t) {
+            Log.w(TAG, "WAKE_REVEAL_ERR " + t);
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    private static void noAnimation(Activity activity) {
+        try {
+            if (Build.VERSION.SDK_INT >= 34) {
+                activity.overrideActivityTransition(Activity.OVERRIDE_TRANSITION_CLOSE, 0, 0);
+            }
+            activity.overridePendingTransition(0, 0);
+        } catch (Throwable t) {
+            Log.w(TAG, "WAKE_NOANIM_ERR " + t);
+        }
+    }
+
+    /**
+     * Phone locked (or asleep), full-screen notices not allowed, Appear on top allowed: Android
+     * hides overlay windows behind the lock screen, so any start now is dropped (the r32 report:
+     * "when my phone is locked it doesn't work"). Wait for the unlock instead.
+     */
+    static boolean shouldWaitForUnlock(Context context) {
+        Context app = context.getApplicationContext();
+        return lockedOrDark(app) && !canFullScreen(app) && canAppearOnTop(app);
+    }
+
+    static boolean waitingForUnlock(Context context) {
+        return AutoCheckin.today().equals(AutoCheckin.prefs(context).getString(KEY_UNLOCK_WAIT_DAY, ""))
+            && !AutoCheckin.doneToday(context);
+    }
+
+    static void clearUnlockWait(Context context) {
+        AutoCheckin.prefs(context).edit().remove(KEY_UNLOCK_WAIT_DAY).apply();
+        unregisterUnlock(context.getApplicationContext());
+    }
+
+    /**
+     * Marks today as waiting for the unlock (CheckinJobService then tries every half hour instead
+     * of every two hours, without using up tries) and, while this process lives, starts the
+     * check-in a moment after the user unlocks the phone.
+     */
+    static void waitForUnlock(Context context) {
+        final Context app = context.getApplicationContext();
+        AutoCheckin.prefs(app).edit().putString(KEY_UNLOCK_WAIT_DAY, AutoCheckin.today()).commit();
+        if (sUnlockReceiver != null) {
+            Log.i(TAG, "WAKE already waiting for the unlock");
+            return;
+        }
+        try {
+            BroadcastReceiver receiver = new BroadcastReceiver() {
+                @Override public void onReceive(Context c, Intent i) {
+                    Log.i(TAG, "WAKE phone unlocked, check-in in " + UNLOCK_SETTLE_MS + " ms");
+                    unregisterUnlock(app);
+                    sHandler.postDelayed(new Runnable() {
+                        @Override public void run() {
+                            try {
+                                if (AutoCheckin.doneToday(app)) {
+                                    Log.i(TAG, "WAKE unlock: already done today");
+                                    return;
+                                }
+                                CheckinJobService.runNow(app);
+                            } catch (Throwable t) {
+                                Log.w(TAG, "WAKE_UNLOCK_RUN_ERR " + t);
+                            }
+                        }
+                    }, UNLOCK_SETTLE_MS);
+                }
+            };
+            IntentFilter filter = new IntentFilter(Intent.ACTION_USER_PRESENT);
+            if (Build.VERSION.SDK_INT >= 26) {
+                // RECEIVER_NOT_EXPORTED (4): only the system's unlock broadcast reaches it.
+                app.registerReceiver(receiver, filter, 4);
+            } else {
+                app.registerReceiver(receiver, filter);
+            }
+            sUnlockReceiver = receiver;
+            Log.i(TAG, "WAKE waiting for the unlock");
+        } catch (Throwable t) {
+            Log.w(TAG, "WAKE_UNLOCK_REG_ERR " + t);
+        }
+    }
+
+    private static void unregisterUnlock(Context app) {
+        BroadcastReceiver receiver = sUnlockReceiver;
+        sUnlockReceiver = null;
+        if (receiver == null) return;
+        try {
+            app.unregisterReceiver(receiver);
+        } catch (Throwable t) {
+            Log.w(TAG, "WAKE_UNLOCK_UNREG_ERR " + t);
         }
     }
 

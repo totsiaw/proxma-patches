@@ -36,6 +36,7 @@ public final class CheckinJobService extends JobService {
     private static final long MINUTE = 60L * 1000L;
     private static final long FIRST_DELAY_MS = 20L * MINUTE;
     private static final long RETRY_DELAY_MS = 120L * MINUTE;
+    private static final long UNLOCK_POLL_MS = 30L * MINUTE;
     private static final long DAY_START_OFFSET_MS = 15L * MINUTE;
     private static final int DAY_START_SPREAD_MIN = 45;
 
@@ -100,7 +101,12 @@ public final class CheckinJobService extends JobService {
                 why = "signed out";
             } else {
                 int tries = AutoCheckin.backgroundTriesToday(context);
-                if (tries >= AutoCheckin.MAX_BG_TRIES_PER_DAY) {
+                if (WakeScreen.waitingForUnlock(context) && tries < AutoCheckin.MAX_BG_TRIES_PER_DAY) {
+                    // Locked phone: look again soon, so the check-in follows the unlock closely
+                    // even when the unlock listener died with the process. These looks use no try.
+                    delay = Math.min(UNLOCK_POLL_MS, untilTomorrow());
+                    why = "waiting for the phone to be unlocked, earlier tries " + tries;
+                } else if (tries >= AutoCheckin.MAX_BG_TRIES_PER_DAY) {
                     delay = untilTomorrow();
                     why = "tries used up";
                 } else {
