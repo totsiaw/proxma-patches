@@ -1,7 +1,7 @@
 {
-  "created_at": "2026-11-16T11:40:00",
-  "description": "Test build for issue #59 (ROX): when Android brings back a ROX screen that already exists instead of opening a fresh one, the background check-in now still uses it and shows it over the lock screen. A ROX screen left in the background no longer makes the background check-in skip its run.",
-  "download_url": "https://github.com/totsiaw/proxma-patches/releases/download/test-issue-59-r32/patches-rox-test-r32.mpp",
+  "created_at": "2026-11-18T20:10:00",
+  "description": "Test build for issue #59 (ROX): while the phone is in use, the background check-in's ROX screen is now see-through and lets your taps through, then closes by itself, so you don't have to go back. While the phone is locked and full-screen notifications aren't allowed for ROX, the check-in now runs right after you next unlock the phone instead of failing.",
+  "download_url": "https://github.com/totsiaw/proxma-patches/releases/download/test-issue-59-r33/patches-rox-test-r33.mpp",
   "signature_download_url": "",
-  "version": "1.28.1-test.32"
+  "version": "1.28.1-test.33"
 }
