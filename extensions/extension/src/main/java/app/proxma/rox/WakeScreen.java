@@ -160,7 +160,7 @@ final class WakeScreen {
         return route;
     }
 
-    private static boolean lockedOrDark(Context app) {
+    static boolean lockedOrDark(Context app) {
         try {
             KeyguardManager keyguard = (KeyguardManager) app.getSystemService(Context.KEYGUARD_SERVICE);
             PowerManager power = (PowerManager) app.getSystemService(Context.POWER_SERVICE);
@@ -317,6 +317,19 @@ final class WakeScreen {
         if (waitingForUnlock(app)) return;
         if (!(overlay && full)) Notices.needsYou(app, "ROX couldn't open itself in the background.");
         else if (sFullFirst && lockedOrDark(app)) Notices.needsYou(app, "ROX couldn't open itself while the phone was locked.");
+    }
+
+    /** Screen on but the lock screen still up: someone is most likely about to unlock the phone. */
+    static boolean screenOnButLocked(Context context) {
+        try {
+            Context app = context.getApplicationContext();
+            KeyguardManager keyguard = (KeyguardManager) app.getSystemService(Context.KEYGUARD_SERVICE);
+            PowerManager power = (PowerManager) app.getSystemService(Context.POWER_SERVICE);
+            return keyguard != null && keyguard.isKeyguardLocked() && power != null && power.isInteractive();
+        } catch (Throwable t) {
+            Log.w(TAG, "WAKE screen check failed " + t);
+            return false;
+        }
     }
 
     private static String phoneState(Context app) {
@@ -621,6 +634,12 @@ final class WakeScreen {
                             try {
                                 if (AutoCheckin.doneToday(app)) {
                                     Log.i(TAG, "WAKE unlock: already done today");
+                                    return;
+                                }
+                                // A job that was holding for this unlock has already started the
+                                // check-in and cleared the wait; a second start would open ROX twice.
+                                if (!waitingForUnlock(app)) {
+                                    Log.i(TAG, "WAKE unlock: check-in already started by the job");
                                     return;
                                 }
                                 CheckinJobService.runNow(app);

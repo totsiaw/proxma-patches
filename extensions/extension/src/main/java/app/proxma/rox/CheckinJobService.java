@@ -11,7 +11,9 @@ import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.util.Log;
+import android.util.SparseArray;
 
 import java.util.Calendar;
 import java.util.Random;
@@ -40,9 +42,19 @@ public final class CheckinJobService extends JobService {
     private static final long DAY_START_OFFSET_MS = 15L * MINUTE;
     private static final int DAY_START_SPREAD_MIN = 45;
 
+    // A run that finds the screen on but the lock screen still up waits this long for the unlock.
+    // The unlock listener can't be relied on for this: it dies with the process (the idle close
+    // ends it a few minutes after each run) and Android 14+ holds its broadcast back while ROX is
+    // in the background. While this job runs ROX is active, so it simply looks every 2 seconds.
+    private static final long HOLD_MAX_MS = 90_000L;
+    private static final long HOLD_POLL_MS = 2_000L;
+    private static final long HOLD_SETTLE_MS = 1_500L;
+
     private static Boolean sDeclared;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
+    // Runs waiting for the unlock, by job id; the planned job and the alarm's run can overlap.
+    private final SparseArray<Runnable> holds = new SparseArray<>();
 
     public static void onActivityCreate(Activity activity) {
         try {
@@ -195,6 +207,76 @@ public final class CheckinJobService extends JobService {
             + (Build.VERSION.SDK_INT >= 31 && params.isExpeditedJob() ? ", expedited" : ""));
         final Context context = getApplicationContext();
         try {
+            if (shouldHold(context)) {
+                hold(params, context);
+                return true;
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "BGJOB_HOLD_ERR " + t);
+        }
+        return begin(params, context, false);
+    }
+
+    /**
+     * The phone's screen is on but locked, nothing can open ROX over the lock screen, and today's
+     * check-in is still to do: the user is most likely unlocking it right now (a run held back by
+     * Doze is let go as soon as the screen turns on, before the unlock).
+     */
+    private static boolean shouldHold(Context context) {
+        return WakeScreen.screenOnButLocked(context)
+            && WakeScreen.shouldWaitForUnlock(context)
+            && !AutoCheckin.doneToday(context)
+            && !AutoCheckin.signedOutToday(context)
+            && AutoCheckin.backgroundTriesToday(context) < AutoCheckin.MAX_BG_TRIES_PER_DAY;
+    }
+
+    private void hold(final JobParameters params, final Context context) {
+        final int id = params.getJobId();
+        final long until = SystemClock.elapsedRealtime() + HOLD_MAX_MS;
+        Log.i(TAG, "BGJOB screen on but locked, waiting up to " + (HOLD_MAX_MS / 1000L) + "s for the unlock");
+        Runnable check = new Runnable() {
+            @Override public void run() {
+                if (holds.get(id) != this) return;
+                try {
+                    if (!WakeScreen.lockedOrDark(context)) {
+                        Log.i(TAG, "BGJOB phone unlocked during the wait, checking in in " + HOLD_SETTLE_MS + " ms");
+                        // Settle first: the launcher is still animating in right after the unlock.
+                        final Runnable self = this;
+                        handler.postDelayed(new Runnable() {
+                            @Override public void run() {
+                                if (holds.get(id) != self) return;
+                                holds.remove(id);
+                                begin(params, context, true);
+                            }
+                        }, HOLD_SETTLE_MS);
+                        return;
+                    }
+                    if (!WakeScreen.screenOnButLocked(context)) {
+                        Log.i(TAG, "BGJOB screen went off while locked, waiting for the next unlock");
+                    } else if (SystemClock.elapsedRealtime() >= until) {
+                        Log.i(TAG, "BGJOB still locked after " + (HOLD_MAX_MS / 1000L) + "s, waiting for the next unlock");
+                    } else {
+                        handler.postDelayed(this, HOLD_POLL_MS);
+                        return;
+                    }
+                } catch (Throwable t) {
+                    Log.w(TAG, "BGJOB_HOLD_CHECK_ERR " + t);
+                }
+                holds.remove(id);
+                // Still locked: the normal path records the wait and plans the next look.
+                begin(params, context, true);
+            }
+        };
+        holds.put(id, check);
+        handler.postDelayed(check, HOLD_POLL_MS);
+    }
+
+    /**
+     * Starts the check-in. [held] is true when onStartJob already returned true for this run, so
+     * the job must be finished here when nothing starts.
+     */
+    private boolean begin(final JobParameters params, final Context context, final boolean held) {
+        try {
             boolean started = AutoCheckin.startBackground(this, new Runnable() {
                 @Override public void run() {
                     Log.i(TAG, "BGJOB finished");
@@ -208,7 +290,8 @@ public final class CheckinJobService extends JobService {
                 }
             });
             if (!started) {
-                Log.i(TAG, "BGJOB nothing to do");
+                Log.i(TAG, "BGJOB nothing to do" + (held ? " after the wait" : ""));
+                if (held) finish(params);
                 handler.post(new Runnable() {
                     @Override public void run() {
                         planNext(context);
@@ -218,6 +301,7 @@ public final class CheckinJobService extends JobService {
             return started;
         } catch (Throwable t) {
             Log.w(TAG, "BGJOB_START_ERR " + t);
+            if (held) finish(params);
             handler.post(new Runnable() {
                 @Override public void run() {
                     planNext(context);
@@ -227,7 +311,27 @@ public final class CheckinJobService extends JobService {
         }
     }
 
+    private void finish(JobParameters params) {
+        try {
+            jobFinished(params, false);
+        } catch (Throwable t) {
+            Log.w(TAG, "BGJOB_FINISH_ERR " + t);
+        }
+    }
+
     @Override public boolean onStopJob(JobParameters params) {
+        final int id = params.getJobId();
+        if (holds.get(id) != null) {
+            holds.remove(id);
+            Log.i(TAG, "BGJOB stopped by the system while waiting for the unlock");
+            final Context context = getApplicationContext();
+            handler.post(new Runnable() {
+                @Override public void run() {
+                    planNext(context);
+                }
+            });
+            return false;
+        }
         Log.i(TAG, "BGJOB stopped by the system");
         handler.post(new Runnable() {
             @Override public void run() {
