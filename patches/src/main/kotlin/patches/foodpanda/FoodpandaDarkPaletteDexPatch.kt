@@ -196,8 +196,6 @@ private fun Any.startReg(): Int? = fld("startRegister") as? Int
  */
 private fun packedColor(hex: String): Long = java.lang.Long.parseUnsignedLong(hex, 16) shl 32
 
-private const val PALETTE_CLASS = "Lm7g;"
-
 /*
  * The "How was <shop>?" rating card is not an Lm7g color: it is a gradient Brush from the Bento
  * gradient-token class `Lq7g` (implements `Lsm3`, foodpanda's twin of foodora's `Lc6g`), built in
@@ -238,11 +236,24 @@ val foodpandaDarkPaletteDexPatch = bytecodePatch(
     extendWith("extensions/extension.mpe")
 
     execute {
-        val palette = mutableClassDefByOrNull(PALETTE_CLASS)
-        check(palette != null) { "foodpanda: $PALETTE_CLASS not found — palette class moved?" }
+        // Locate the Bento palette class by STRUCTURE, not by its R8-minified name (which churns
+        // every release: `Lm7g;` on 26.38.1, `Lcqg;` on 26.45.0, …). The palette is unmistakable:
+        // ~180 instance `:J` colour fields, ~180 no-arg `()J` getters, and a single `<init>(I)V`
+        // theme constructor. No other class in the app comes close to this shape.
+        val palette = mutableClassDefByOrNull { cls ->
+            cls.fields.count { it.type == "J" } >= 150 &&
+                cls.methods.count {
+                    it.name != "<init>" && it.parameters.isEmpty() && it.returnType == "J"
+                } >= 100 &&
+                cls.methods.any { it.name == "<init>" && it.parameters.size == 1 && it.returnType == "V" }
+        }
+        check(palette != null) {
+            "foodpanda: Bento palette class (>=150 J fields + >=100 ()J getters + <init>(I)V) not found — palette layout changed"
+        }
+        val paletteType = palette.type
 
         val ctor = palette.methods.firstOrNull { it.name == "<init>" && it.parameters.size == 1 }
-        check(ctor != null) { "foodpanda: $PALETTE_CLASS.<init>(I)V not found" }
+        check(ctor != null) { "foodpanda: $paletteType.<init>(I)V not found" }
 
         // 1) recover field -> light literal from the constructor by straight-line dataflow.
         //    The ctor never stores a literal directly: it does
@@ -287,8 +298,12 @@ val foodpandaDarkPaletteDexPatch = bytecodePatch(
                 op.startsWith("invoke_static") -> {
                     val ref = insn.refStr()
                     val first = if (op.contains("range")) insn.startReg() else insn.regC()
-                    // f(J)J and e(I)J both pack ARGB as `argb << 32`
-                    val packs = ref == "Lh91;->f(J)J" || ref == "Lh91;->e(I)J"
+                    // The ARGB packing helper is `argb << 32`, invoked as a static `(J)J` (raw ULong
+                    // colour) or `(I)J` (alpha-premultiplied int colour). Its holder class churns with
+                    // R8 (`Lh91;->f`/`e` on 26.38.1, `Ld0m;->c` on 26.45.0), so match the SHAPE of the
+                    // call, not the name. The Bento ctor calls nothing else statically, and any stray
+                    // packed value that fails to map to a known light colour is simply ignored below.
+                    val packs = ref != null && (ref.endsWith("(J)J") || ref.endsWith("(I)J"))
                     pending = if (packs && first != null) raw[first] else null
                 }
                 op.startsWith("invoke") -> pending = null
@@ -301,8 +316,8 @@ val foodpandaDarkPaletteDexPatch = bytecodePatch(
                 }
                 op.startsWith("iput_wide") -> {
                     val ref = insn.refStr() ?: continue
-                    if (!ref.startsWith("$PALETTE_CLASS->") || !ref.endsWith(":J")) continue
-                    val field = ref.removePrefix("$PALETTE_CLASS->").removeSuffix(":J")
+                    if (!ref.startsWith("$paletteType->") || !ref.endsWith(":J")) continue
+                    val field = ref.removePrefix("$paletteType->").removeSuffix(":J")
                     val lit = a?.let { converted[it] }
                     if (lit != null) fieldToLiteral.putIfAbsent(field, lit)
                 }
@@ -316,7 +331,7 @@ val foodpandaDarkPaletteDexPatch = bytecodePatch(
         for ((field, expected) in FIELD_OVERRIDES) {
             val actual = fieldToLiteral[field]
             check(actual == expected.first) {
-                "foodpanda: override field $PALETTE_CLASS->$field holds ${actual ?: "no recovered literal"}, " +
+                "foodpanda: override field $paletteType->$field holds ${actual ?: "no recovered literal"}, " +
                     "expected ${expected.first} — palette layout changed"
             }
         }
@@ -334,7 +349,7 @@ val foodpandaDarkPaletteDexPatch = bytecodePatch(
         var rewritten = 0
         val getters = palette.methods.filter { it.parameters.isEmpty() && it.name != "<init>" }
         for ((field, dark) in remap) {
-            val target = "$PALETTE_CLASS->$field:J"
+            val target = "$paletteType->$field:J"
             for (method in getters) {
                 val readsField = method.instructions.any {
                     it.opcodeName().startsWith("iget_wide") && it.refStr() == target
@@ -361,26 +376,32 @@ val foodpandaDarkPaletteDexPatch = bytecodePatch(
                 "remapped ${remap.size}, kept $kept, rewrote $rewritten getters",
         )
 
-        // 4) rating card gradient: route the packed stop colors that feed Lq7g->l (only) through
-        //    DarkMode. Each stop is `invoke-static Lh91;->f/e ; move-result-wide vY ; Lfi8.<init>(vY)`,
-        //    so `vY = DarkMode.ratingX(vY)` right after the move-result swaps that stop without
-        //    touching the source registers other gradients share.
+        // 4) rating card gradient: route the packed stop colors that feed the rating card's gradient
+        //    (verified as Lq7g->l on 26.38.1) through DarkMode. Each stop is `invoke-static <pack> ;
+        //    move-result-wide vY ; <Stop>.<init>(vY)`, so `vY = DarkMode.ratingX(vY)` right after the
+        //    move-result swaps that stop without touching the source registers other gradients share.
+        //
+        //    Hand-verified against 26.38.1's `Lq7g;` class and its exact stop palette
+        //    (ffffebeb -> ffffc4cc). On builds where that class is absent the gradient was re-minified
+        //    and its stops changed (26.45.0 moves it to `Loog;` with a different stop set), so a
+        //    byte-exact rewrite there would mis-fire. It is one cosmetic card and the app-wide palette
+        //    above already carries dark mode, so skip this step cleanly rather than abort.
         val gradients = mutableClassDefByOrNull(GRADIENT_CLASS)
-        check(gradients != null) { "foodpanda: $GRADIENT_CLASS not found — gradient class moved?" }
-        val gradCtor = gradients.methods.firstOrNull { it.name == "<init>" && it.parameters.size == 1 }
-        check(gradCtor != null) { "foodpanda: $GRADIENT_CLASS.<init>(I)V not found" }
-
-        val stopRaw = HashMap<Int, String>()
-        // registers loaded before the flag `packed-switch` are live again in the :pswitch_0 branch
-        // that follows the first return-void (v12 = ffffebeb is one), so restore them there
-        var atSwitch: Map<Int, String> = emptyMap()
-        var stopPending: String? = null
-        val segment = ArrayList<Triple<Int, Int, String>>() // (insn index, result register, light literal)
-        var builtStops: List<Triple<Int, Int, String>>? = null // stops consumed by the last Lgnd.i
-        val brushStops = HashMap<Int, List<Triple<Int, Int, String>>>() // brush register -> its stops
-        val inserts = ArrayList<Triple<Int, Int, String>>()  // (insert index, register, dark literal)
-        var ratingSegments = 0
-        for ((index, insn) in gradCtor.instructions.withIndex()) {
+        val gradCtor = gradients?.methods?.firstOrNull { it.name == "<init>" && it.parameters.size == 1 }
+        if (gradCtor == null) {
+            println("foodpanda dark mode: $GRADIENT_CLASS not present on this build; skipping rating-card gradient")
+        } else {
+            val stopRaw = HashMap<Int, String>()
+            // registers loaded before the flag `packed-switch` are live again in the :pswitch_0 branch
+            // that follows the first return-void (v12 = ffffebeb is one), so restore them there
+            var atSwitch: Map<Int, String> = emptyMap()
+            var stopPending: String? = null
+            val segment = ArrayList<Triple<Int, Int, String>>() // (insn index, result register, light literal)
+            var builtStops: List<Triple<Int, Int, String>>? = null // stops consumed by the last linearGradient
+            val brushStops = HashMap<Int, List<Triple<Int, Int, String>>>() // brush register -> its stops
+            val inserts = ArrayList<Triple<Int, Int, String>>()  // (insert index, register, dark literal)
+            var ratingSegments = 0
+            for ((index, insn) in gradCtor.instructions.withIndex()) {
             val op = insn.opcodeName()
             val a = insn.regA()
             when {
@@ -448,20 +469,30 @@ val foodpandaDarkPaletteDexPatch = bytecodePatch(
                 }
             }
         }
-        check(ratingSegments > 0) { "foodpanda: no store to $RATING_GRADIENT_FIELD found in $GRADIENT_CLASS.<init>" }
-        for ((at, reg, helper) in inserts.sortedByDescending { it.first }) {
-            gradCtor.addInstructions(
-                at,
-                """
-                    invoke-static {v$reg, v${reg + 1}}, $DARK_MODE->$helper(J)J
-                    move-result-wide v$reg
-                """.trimIndent(),
-            )
+            // On 26.45.0 the class name `Lq7g;` still exists but no longer holds the rating gradient
+            // (it moved to `Loog;` and the stop palette changed), so no store is found. Skip rather
+            // than abort — the app-wide palette above is the actual dark theme; this is one card.
+            if (ratingSegments == 0) {
+                println(
+                    "foodpanda dark mode: rating-card gradient store ($RATING_GRADIENT_FIELD) not found " +
+                        "on this build; skipping it (the app-wide dark palette is already applied)",
+                )
+            } else {
+                for ((at, reg, helper) in inserts.sortedByDescending { it.first }) {
+                    gradCtor.addInstructions(
+                        at,
+                        """
+                            invoke-static {v$reg, v${reg + 1}}, $DARK_MODE->$helper(J)J
+                            move-result-wide v$reg
+                        """.trimIndent(),
+                    )
+                }
+                println(
+                    "foodpanda dark mode: rating card gradient $RATING_GRADIENT_FIELD rewrote " +
+                        "${inserts.size} stops in $ratingSegments ctor branch(es)",
+                )
+            }
         }
-        println(
-            "foodpanda dark mode: rating card gradient $RATING_GRADIENT_FIELD rewrote " +
-                "${inserts.size} stops in $ratingSegments ctor branch(es)",
-        )
 
         // 5) the toggle row: SettingsFragment.onCreateView returns the inflated ScrollView exactly
         //    once on its success path; hand it to DarkMode.attach first.
