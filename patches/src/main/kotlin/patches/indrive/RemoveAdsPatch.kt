@@ -17,7 +17,7 @@ import app.morphe.patcher.patch.bytecodePatch
  *
  * Where it is applied matters. Rather than neutralizing the ~30 call sites that read these toggles
  * (each one a chance to miss the placement the user is actually seeing), the patch hooks the single
- * hooks the single resolver every read goes through — the feature-toggle repository's boolean accessor
+ * resolver every read goes through — the feature-toggle repository's boolean accessor
  *     c(<Toggle>;Z)Z      // resolve(toggle, default)
  * and returns `false` when the toggle handed in is one of the Google Ads ones. One injection point
  * therefore covers every placement and every future placement, including reads made directly by the
@@ -118,7 +118,10 @@ val removeAdsPatch = bytecodePatch(
                 appendLine("    sget-object $scratch, $TOGGLE_CONSTANTS->INSTANCE:$TOGGLE_CONSTANTS")
                 appendLine("    invoke-virtual {$scratch}, $TOGGLE_CONSTANTS->$getter()$toggleType")
                 appendLine("    move-result-object $scratch")
-                appendLine("    if-eq p1, $scratch, :indrive_ads_on_$i")
+                // Branch *away* when the toggle is not this one. An `if-eq` here inverts the
+                // guard: every unrelated toggle falls through to `return false` (which hid the
+                // fare +/- stepper and broke order creation) while the Google Ads toggles skip it.
+                appendLine("    if-ne p1, $scratch, :indrive_ads_on_$i")
                 appendLine("    const/4 $scratch, 0x0")
                 appendLine("    return $scratch")
                 appendLine("    :indrive_ads_on_$i")
