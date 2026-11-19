@@ -1,7 +1,7 @@
 {
-  "created_at": "2026-11-18T20:10:00",
-  "description": "Test build for issue #59 (ROX): while the phone is in use, the background check-in's ROX screen is now see-through and lets your taps through, then closes by itself, so you don't have to go back. While the phone is locked and full-screen notifications aren't allowed for ROX, the check-in now runs right after you next unlock the phone instead of failing.",
-  "download_url": "https://github.com/totsiaw/proxma-patches/releases/download/test-issue-59-r33/patches-rox-test-r33.mpp",
+  "created_at": "2026-11-19T21:00:00",
+  "description": "Test build for issue #59 (ROX): rebuilt for ROX 3.0.14 so it installs over the forced 'Update Available' prompt that blocked the earlier build. The daily streak check-in runs when you open the app, and the background check-in behaviour is unchanged from the previous build.",
+  "download_url": "https://github.com/totsiaw/proxma-patches/releases/download/test-issue-59-r34/patches-rox-test-r34.mpp",
   "signature_download_url": "",
-  "version": "1.28.1-test.33"
+  "version": "1.28.1-test.34"
 }
