@@ -16,6 +16,9 @@ private const val IDLE_PROVIDER = "app.proxma.rox.IdleProvider"
 // A provider is created at every process start, including ones started by pushes, jobs and
 // alarms with no screen, so idle close can watch those processes too.
 private val idleProviderManifestPatch = resourcePatch {
+    // Clears 3.0.14's duplicate <application android:name> before this reads the manifest as XML.
+    dependsOn(fixApplicationNamePatch)
+
     finalize {
         document("AndroidManifest.xml").use { doc ->
             val manifest = doc.documentElement
@@ -53,7 +56,8 @@ val closeWhenIdlePatch = bytecodePatch(
     execute {
         val onCreate = roxMainActivityOnCreateFingerprint.method
         val superCall = onCreate.instructions.toList().indexOfFirst { instruction ->
-            if (instruction.opcode != Opcode.INVOKE_SUPER) {
+            // 3.0.13 compiled this as invoke-super; 3.0.14 as invoke-super/range. Accept both.
+            if (instruction.opcode != Opcode.INVOKE_SUPER && instruction.opcode != Opcode.INVOKE_SUPER_RANGE) {
                 return@indexOfFirst false
             }
             val reference = (instruction as? ReferenceInstruction)?.reference as? MethodReference
@@ -66,9 +70,11 @@ val closeWhenIdlePatch = bytecodePatch(
             throw PatchException("MainActivity.onCreate has no invoke-super onCreate(Bundle) to anchor on")
         }
 
+        // Range form: in 3.0.14 onCreate uses enough registers that p0 is above v15, which a
+        // plain invoke-static {p0} cannot encode.
         onCreate.addInstructions(
             superCall + 1,
-            "invoke-static {p0}, $IDLE_CLOSE->onActivityCreate(Landroid/app/Activity;)V",
+            "invoke-static/range {p0 .. p0}, $IDLE_CLOSE->onActivityCreate(Landroid/app/Activity;)V",
         )
     }
 }

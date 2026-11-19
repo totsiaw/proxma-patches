@@ -22,9 +22,10 @@ internal val roxServiceManagerStartFingerprint = Fingerprint(
     },
 )
 
+// No accessFlags filter: it is matched exactly and the flags drift between builds
+// (`public` in 3.0.13, `public final` in 3.0.14). Class + name + signature pin each uniquely.
 internal val roxRestartReceiverFingerprint = Fingerprint(
     returnType = "V",
-    accessFlags = listOf(AccessFlags.PUBLIC),
     parameters = listOf(CONTEXT, INTENT),
     custom = { method, classDef ->
         classDef.type == RESTART_RECEIVER && method.name == "onReceive"
@@ -33,7 +34,6 @@ internal val roxRestartReceiverFingerprint = Fingerprint(
 
 internal val roxRebootReceiverFingerprint = Fingerprint(
     returnType = "V",
-    accessFlags = listOf(AccessFlags.PUBLIC),
     parameters = listOf(CONTEXT, INTENT),
     custom = { method, classDef ->
         classDef.type == REBOOT_RECEIVER && method.name == "onReceive"
