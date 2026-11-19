@@ -1,7 +1,7 @@
 {
-  "created_at": "2026-11-19T21:00:00",
-  "description": "Test build for issue #59 (ROX): rebuilt for ROX 3.0.14 so it installs over the forced 'Update Available' prompt that blocked the earlier build. The daily streak check-in runs when you open the app, and the background check-in behaviour is unchanged from the previous build.",
-  "download_url": "https://github.com/totsiaw/proxma-patches/releases/download/test-issue-59-r34/patches-rox-test-r34.mpp",
+  "created_at": "2026-11-19T21:20:00",
+  "description": "Test build for issue #59 (ROX): same as the ROX 3.0.14 build, plus an optional 'Skip forced update prompt' patch (off by default). Turn it on if ROX shows 'Update Available' again before a new patched build is out.",
+  "download_url": "https://github.com/totsiaw/proxma-patches/releases/download/test-issue-59-r35/patches-rox-test-r35.mpp",
   "signature_download_url": "",
-  "version": "1.28.1-test.34"
+  "version": "1.28.1-test.35"
 }
