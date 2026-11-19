@@ -20,5 +20,13 @@ internal val COMPATIBILITY_FOODPANDA = Compatibility(
             version = "26.38.1",
             minSdk = 29,
         ),
+        AppTarget(
+            // Newer Play Store build (issue #71). Same manifest shape as 26.38.1
+            // (minSdkVersion 29, targetSdk 36). The foodpanda fingerprints are all
+            // anchored on stable first-party DeliveryHero types/strings, so they
+            // resolve unchanged on this release.
+            version = "26.45.0",
+            minSdk = 29,
+        ),
     ),
 )
