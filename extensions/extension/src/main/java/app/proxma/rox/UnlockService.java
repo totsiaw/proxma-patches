@@ -33,8 +33,9 @@ import java.util.TimeZone;
  * see-through through Appear on top (WakeScreen), where AutoCheckin presses Check-in and closes the
  * screen again; the user taps nothing. One try per day: the day is marked before the screen opens,
  * so a second unlock, or a try that didn't work, never opens ROX again that day. The service stops
- * when that session ends, 90 seconds after the unlock at the latest, or at midnight; the next
- * alarm starts it again for the new day.
+ * when that session ends, 90 seconds after the unlock at the latest, or at the first screen-on,
+ * unlock or timeout after midnight (a delayed handler would stall in deep sleep); the next alarm
+ * starts it again for the new day.
  */
 public final class UnlockService extends Service {
 
@@ -62,6 +63,8 @@ public final class UnlockService extends Service {
     private boolean stopping = false;
     private long askedAt = 0L;
     private boolean opened = false;
+    // The ROX day (Pakistan time) this service was started for.
+    private String serviceDay = "";
 
     /** From the wake-up alarm or the boot broadcast. False when Android refuses the start. */
     static boolean start(Context context, String why) {
@@ -163,13 +166,9 @@ public final class UnlockService extends Service {
             finish("already ran today, stopping");
             return START_NOT_STICKY;
         }
+        serviceDay = AutoCheckin.today();
         register(app);
         long dayEnd = untilMidnight();
-        handler.postDelayed(new Runnable() {
-            @Override public void run() {
-                finish("day ended, stopping");
-            }
-        }, dayEnd);
         // This service handles today now: move the planned job and the alarm to tomorrow.
         CheckinJobService.planNext(app);
         if (!WakeScreen.lockedOrDark(app)) {
@@ -192,6 +191,9 @@ public final class UnlockService extends Service {
                 @Override public void onReceive(Context context, Intent intent) {
                     try {
                         if (stopping) return;
+                        boolean screenOn = intent != null && Intent.ACTION_SCREEN_ON.equals(intent.getAction());
+                        if (dayRolled(screenOn ? "screen on" : "unlock")) return;
+                        if (screenOn) return;
                         if (attempting || ranToday(app)) {
                             Log.i(TAG, "UNLOCK already ran today, ignoring");
                             return;
@@ -203,7 +205,10 @@ public final class UnlockService extends Service {
                     }
                 }
             };
-            app.registerReceiver(unlock, new IntentFilter(Intent.ACTION_USER_PRESENT), RECEIVER_NOT_EXPORTED);
+            IntentFilter filter = new IntentFilter(Intent.ACTION_USER_PRESENT);
+            // Screen-on only to notice that the day has ended while the phone slept.
+            filter.addAction(Intent.ACTION_SCREEN_ON);
+            app.registerReceiver(unlock, filter, RECEIVER_NOT_EXPORTED);
             receiver = unlock;
         } catch (Throwable t) {
             Log.w(TAG, "UNLOCK_REG_ERR " + t);
@@ -223,6 +228,7 @@ public final class UnlockService extends Service {
         opened = false;
         handler.postDelayed(new Runnable() {
             @Override public void run() {
+                if (dayRolled("timeout")) return;
                 finish("timed out " + (SAFETY_MS / 1000L) + "s after the unlock, stopping");
             }
         }, SAFETY_MS);
@@ -248,11 +254,6 @@ public final class UnlockService extends Service {
                 }
                 attempting = false;
                 handler.removeCallbacksAndMessages(null);
-                handler.postDelayed(new Runnable() {
-                    @Override public void run() {
-                        finish("day ended, stopping");
-                    }
-                }, untilMidnight());
                 Log.i(TAG, "UNLOCK phone locked again before opening, waiting for the next unlock");
                 return;
             }
@@ -298,6 +299,18 @@ public final class UnlockService extends Service {
                 handler.postDelayed(this, OPEN_POLL_MS);
             }
         }, OPEN_POLL_MS);
+    }
+
+    /**
+     * True, and the service stopped, when the ROX day has changed since it started. Checked on each
+     * screen-on, unlock and timeout: a handler set for midnight stalls while the phone is in deep
+     * sleep. Today's alarm, already set for 00:01, starts the service again for the new day.
+     */
+    private boolean dayRolled(String event) {
+        String today = AutoCheckin.today();
+        if (serviceDay.isEmpty() || serviceDay.equals(today)) return false;
+        finish("day ended (" + serviceDay + ", now " + today + ", noticed at " + event + "), stopping");
+        return true;
     }
 
     private void finish(String why) {
