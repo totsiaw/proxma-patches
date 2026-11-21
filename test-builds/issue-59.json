@@ -1,7 +1,7 @@
 {
-  "created_at": "2026-11-19T21:35:00",
-  "description": "Test build for issue #59 (ROX 3.0.14): same as r35, plus the background check-in now catches the moment you unlock the phone instead of waiting up to half an hour after it. The optional 'Skip forced update prompt' patch is still off by default.",
-  "download_url": "https://github.com/totsiaw/proxma-patches/releases/download/test-issue-59-r36/patches-rox-test-r36.mpp",
+  "created_at": "2026-11-21T06:00:00",
+  "description": "Test build for issue #59 (ROX 3.0.14): the background check-in no longer tries while the phone is locked. It now checks in silently the first time you unlock the phone each day after midnight (Pakistan time), then closes. Needs 'Appear on top' allowed for ROX. The optional 'Skip forced update prompt' patch is still off by default.",
+  "download_url": "https://github.com/totsiaw/proxma-patches/releases/download/test-issue-59-r39/patches-rox-test-r39.mpp",
   "signature_download_url": "",
-  "version": "1.28.1-test.36"
+  "version": "1.28.1-test.39"
 }
