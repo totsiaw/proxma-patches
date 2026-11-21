@@ -1,3 +1,9 @@
+## [1.29.0](https://github.com/totsiaw/proxma-patches/compare/1.28.2...1.29.0) (2026-11-21)
+
+### New Features
+
+* **rox:** support ROX 3.0.14 and add check-in, battery and Play-check patches ([e0aa2f4](https://github.com/totsiaw/proxma-patches/commit/e0aa2f4195d027d0ff9feab4551800f9c684bebf)), closes [#59](https://github.com/totsiaw/proxma-patches/issues/59)
+
 ## [1.28.2](https://github.com/totsiaw/proxma-patches/compare/1.28.1...1.28.2) (2026-11-21)
 
 ### Bug Fixes
