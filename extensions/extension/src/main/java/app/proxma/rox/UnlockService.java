@@ -115,21 +115,33 @@ public final class UnlockService extends Service {
         final Context app = getApplicationContext();
         String why = intent != null ? intent.getStringExtra(EXTRA_WHY) : null;
         if (why == null) why = "restarted by Android";
-        try {
-            Notification notice = notice(app);
-            if (Build.VERSION.SDK_INT >= 34) {
-                startForeground(NOTICE_ID, notice, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
-            } else {
-                startForeground(NOTICE_ID, notice);
-            }
-        } catch (Throwable t) {
-            // Mostly a restart by Android after it ended the process (a refused start throws in
-            // start() instead). Fall back to the job, which opens ROX only while the phone is unlocked.
-            Log.w(TAG, "UNLOCK start refused in the service " + t);
+        String refused = goForeground(app);
+        if (refused != null) {
+            // Fall back to the job, which opens ROX only while the phone is unlocked. Planned
+            // first: JobScheduler keeps it even if Android ends ROX's process below.
             sRunning = null;
             stopping = true;
-            stopSelf(startId);
-            CheckinJobService.planNext(app);
+            if (intent != null) {
+                CheckinJobService.runNow(app);
+                // Started with startForegroundService (the alarm or the boot broadcast): stopping
+                // a service that never called startForeground makes Android crash ROX at once
+                // ("did not then call startForeground"). Leave it started; it does nothing, and
+                // Android ends it when its foreground time limit runs out.
+                Log.w(TAG, "UNLOCK couldn't go foreground (" + refused + "), job planned instead; "
+                    + "not stopping the service, which would crash ROX");
+            } else {
+                // A restart by Android after it ended the process: no startForeground is owed,
+                // so stopping is safe.
+                CheckinJobService.planNext(app);
+                Log.w(TAG, "UNLOCK couldn't go foreground on a restart (" + refused + "), job planned instead, stopping");
+                stopSelf(startId);
+            }
+            try {
+                AutoCheckin.recordBackground(app, "the check-in at unlock couldn't start (" + refused
+                    + "); the background job takes over and opens ROX only while the phone is unlocked");
+            } catch (Throwable t) {
+                Log.w(TAG, "UNLOCK_RECORD_ERR " + t);
+            }
             return START_NOT_STICKY;
         }
         if (attempting) {
@@ -335,6 +347,57 @@ public final class UnlockService extends Service {
         next.set(Calendar.SECOND, 0);
         next.set(Calendar.MILLISECOND, 0);
         return Math.max(1_000L, next.getTimeInMillis() - System.currentTimeMillis());
+    }
+
+    /**
+     * Puts the service in the foreground; null when that worked, else why not. Tries the
+     * specialUse type, then the manifest's type, then a plain notice, since a service started
+     * with startForegroundService that never gets here is ended by Android with a crash.
+     */
+    private String goForeground(Context app) {
+        StringBuilder why = new StringBuilder();
+        Notification notice = null;
+        try {
+            notice = notice(app);
+        } catch (Throwable t) {
+            why.append("notice: ").append(t.getClass().getSimpleName()).append("; ");
+            Log.w(TAG, "UNLOCK_NOTICE_ERR " + t);
+        }
+        if (notice != null && Build.VERSION.SDK_INT >= 34) {
+            try {
+                startForeground(NOTICE_ID, notice, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+                return null;
+            } catch (Throwable t) {
+                why.append("special use: ").append(t.getClass().getSimpleName()).append("; ");
+                Log.w(TAG, "UNLOCK_FG_SPECIAL_ERR " + t);
+            }
+        }
+        if (notice != null) {
+            try {
+                startForeground(NOTICE_ID, notice);
+                return null;
+            } catch (Throwable t) {
+                why.append("default: ").append(t.getClass().getSimpleName()).append("; ");
+                Log.w(TAG, "UNLOCK_FG_ERR " + t);
+            }
+        }
+        try {
+            NotificationManager manager = (NotificationManager) app.getSystemService(Context.NOTIFICATION_SERVICE);
+            if (manager != null && manager.getNotificationChannel(CHANNEL) == null) {
+                manager.createNotificationChannel(new NotificationChannel(CHANNEL, "Check-in at unlock (patch)",
+                    NotificationManager.IMPORTANCE_LOW));
+            }
+            startForeground(NOTICE_ID, new Notification.Builder(app, CHANNEL)
+                .setSmallIcon(android.R.drawable.ic_popup_reminder)
+                .setContentTitle("ROX daily check-in")
+                .build());
+            Log.i(TAG, "UNLOCK foreground with the plain notice");
+            return null;
+        } catch (Throwable t) {
+            why.append("plain: ").append(t.getClass().getSimpleName());
+            Log.w(TAG, "UNLOCK_FG_PLAIN_ERR " + t);
+        }
+        return why.toString();
     }
 
     private static Notification notice(Context app) {
