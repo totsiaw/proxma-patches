@@ -38,6 +38,9 @@ import java.lang.ref.WeakReference;
  * while the app has an overlay window on screen, so a 1-pixel window is put up just before the
  * start and taken down once the screen opens. Nothing is ever shown over the lock screen: a screen
  * that comes up while the phone is locked or the display is off is closed straight away.
+ *
+ * Only a screen whose intent carries the EXTRA marker (set by launchIntent, never by a notice or
+ * the launcher) is treated as the check-in screen; any other ROX screen is the user's.
  */
 final class WakeScreen {
 
@@ -51,7 +54,6 @@ final class WakeScreen {
     // Any ROX screen created, marked or not: tells "Android blocked the start" apart from
     // "a screen was made but not as the check-in screen".
     static final String KEY_ANY_CREATED_AT = "wake_any_created_at";
-    private static final long UNMARKED_WINDOW_MS = 45_000L;
     private static final String ROUTE_OVERLAY = "appear on top";
     // How long after asking the start is checked, and the result recorded if the screen didn't open.
     static final long BACKUP_NOTICE_MS = 20_000L;
@@ -64,6 +66,9 @@ final class WakeScreen {
     private static WeakReference<Activity> sClosing = new WeakReference<>(null);
     // The check-in screen made see-through, so the phone's user keeps seeing and using what they had.
     private static WeakReference<Activity> sHidden = new WeakReference<>(null);
+    // An existing ROX screen that got the background run's marked intent through onNewIntent and
+    // has not come up since; taken as the check-in screen at its next start or resume.
+    private static WeakReference<Activity> sMarkedNewIntent = new WeakReference<>(null);
 
     private WakeScreen() {}
 
@@ -237,6 +242,9 @@ final class WakeScreen {
         String text = "asked Android " + sStarts + "x to open ROX's screen (appear on top, helper window "
             + sHelperState + ") but it didn't open; " + made + "; " + phone;
         Log.w(TAG, "WAKE screen didn't open: " + text);
+        // The request is over: a ROX screen that comes up later is the user's, not this one.
+        SharedPreferences prefs = AutoCheckin.prefs(app);
+        if (prefs.getLong(KEY_OPEN_ASKED_AT, 0L) == at) prefs.edit().remove(KEY_OPEN_ASKED_AT).commit();
         AutoCheckin.recordBackground(app, text);
         Notices.needsYou(app, "ROX couldn't open itself in the background.");
     }
@@ -271,26 +279,35 @@ final class WakeScreen {
         return intent;
     }
 
+    /**
+     * True when the intent is the background run's own request (launchIntent). Only such a screen
+     * is ever made see-through or closed by the patch: one the user opens (launcher, Recents, the
+     * "Tap to open ROX" notice) never carries the marker and stays as it is. A task brought back
+     * from Recents replays its old root intent, so a launch from history never counts.
+     */
+    private static boolean marked(Intent intent) {
+        return intent != null && intent.getBooleanExtra(EXTRA, false)
+            && (intent.getFlags() & Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0;
+    }
+
     /** From MainActivity.onCreate: takes a screen opened by the background run as the check-in screen. */
     static boolean onCreate(Activity activity) {
         try {
             Intent intent = activity.getIntent();
-            boolean marked = intent != null && intent.getBooleanExtra(EXTRA, false);
             SharedPreferences prefs = AutoCheckin.prefs(activity);
             long now = System.currentTimeMillis();
             prefs.edit().putLong(KEY_ANY_CREATED_AT, now).apply();
-            if (!marked) {
-                // Android can rebuild the screen from an older intent and drop the marker. A
-                // screen created right after the background run asked for one, with none opened
-                // since, is that screen.
+            if (!marked(intent)) {
+                // r39 also took an unmarked screen made within 45 s of a request; that hid and
+                // closed screens the user opened. No marker, no take: the screen is the user's.
                 long asked = prefs.getLong(KEY_OPEN_ASKED_AT, 0L);
-                boolean pending = asked > 0 && now - asked >= 0 && now - asked < UNMARKED_WINDOW_MS
-                    && prefs.getLong(KEY_OPENED_AT, 0L) < asked;
-                if (!pending) return false;
-                Log.i(TAG, "WAKE screen created without the marker " + (now - asked)
-                    + " ms after the background run asked, treating it as that screen");
+                if (asked > 0 && prefs.getLong(KEY_OPENED_AT, 0L) < asked) {
+                    Log.i(TAG, "WAKE screen created without the marker while a background open is pending, "
+                        + "leaving it to the user");
+                }
+                return false;
             }
-            take(activity, prefs, now, marked ? "marked" : "unmarked");
+            take(activity, prefs, now, "marked");
             return true;
         } catch (Throwable t) {
             Log.w(TAG, "WAKE_CREATE_ERR " + t);
@@ -299,25 +316,40 @@ final class WakeScreen {
     }
 
     /**
-     * From the screen's start and resume: Android can bring back a ROX screen that already exists
-     * instead of making a new one, and then onCreate never runs and the marker only reaches
-     * onNewIntent. That is what the r29 report shows: a ROX screen came up at 00:25 and read as an
-     * ordinary app open. A screen that comes up shortly after a background request, with none
-     * opened since, is taken as the check-in screen here too.
+     * From MainActivity.onNewIntent: Android can hand the background run's request to a ROX screen
+     * that already exists instead of making a new one (launchIntent's CLEAR_TASK normally prevents
+     * that). Then onCreate never runs and the marker only reaches here; remember the screen so its
+     * next start or resume takes it.
+     */
+    static void onNewIntent(Activity activity, Intent intent) {
+        try {
+            if (activity == null) return;
+            if (!marked(intent)) {
+                if (sMarkedNewIntent.get() == activity) sMarkedNewIntent = new WeakReference<>(null);
+                return;
+            }
+            sMarkedNewIntent = new WeakReference<>(activity);
+            Log.i(TAG, "WAKE marked intent delivered to an existing screen");
+        } catch (Throwable t) {
+            Log.w(TAG, "WAKE_NEW_INTENT_ERR " + t);
+        }
+    }
+
+    /**
+     * From the screen's start and resume: takes an existing screen as the check-in screen only when
+     * the background run's marked intent reached it through onNewIntent. A screen that merely
+     * comes up soon after a request (r30 to r39 took those) is the user's and is left alone.
      */
     static boolean onShown(Activity activity, String when) {
         try {
             if (activity == null || woken(activity) || closing(activity)) return woken(activity);
+            if (sMarkedNewIntent.get() != activity) return false;
+            sMarkedNewIntent = new WeakReference<>(null);
             SharedPreferences prefs = AutoCheckin.prefs(activity);
             long now = System.currentTimeMillis();
-            long asked = prefs.getLong(KEY_OPEN_ASKED_AT, 0L);
-            boolean pending = asked > 0 && now - asked >= 0 && now - asked < UNMARKED_WINDOW_MS
-                && prefs.getLong(KEY_OPENED_AT, 0L) < asked;
-            if (!pending) return false;
             prefs.edit().putLong(KEY_ANY_CREATED_AT, now).apply();
-            Log.i(TAG, "WAKE existing screen brought back (" + when + ") " + (now - asked)
-                + " ms after the background run asked, treating it as that screen");
-            take(activity, prefs, now, "brought back, " + when);
+            Log.i(TAG, "WAKE existing screen brought back with the marker (" + when + "), taking it");
+            take(activity, prefs, now, "brought back with the marker, " + when);
             return true;
         } catch (Throwable t) {
             Log.w(TAG, "WAKE_SHOWN_ERR " + t);

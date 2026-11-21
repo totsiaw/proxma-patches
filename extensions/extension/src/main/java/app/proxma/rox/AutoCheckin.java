@@ -3,6 +3,7 @@ package app.proxma.rox;
 import android.app.Activity;
 import android.app.Application;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Rect;
 import android.os.Bundle;
@@ -110,6 +111,15 @@ public final class AutoCheckin {
             start(activity);
         } catch (Throwable t) {
             Log.w(TAG, "ENTRY_ERR " + t);
+        }
+    }
+
+    /** From MainActivity.onNewIntent, before ROX's own handling. */
+    public static void onActivityNewIntent(Activity activity, Intent intent) {
+        try {
+            WakeScreen.onNewIntent(activity, intent);
+        } catch (Throwable t) {
+            Log.w(TAG, "NEW_INTENT_ERR " + t);
         }
     }
 

@@ -13,6 +13,7 @@ private const val MAIN_ACTIVITY = "Lcom/jazz/rox/MainActivity;"
 private const val AUTO_CHECKIN = "Lapp/proxma/rox/AutoCheckin;"
 private const val ACTIVITY = "Landroid/app/Activity;"
 private const val BUNDLE = "Landroid/os/Bundle;"
+private const val INTENT = "Landroid/content/Intent;"
 
 // No accessFlags filter: it is matched exactly, and MainActivity.onCreate is `public` in
 // 3.0.13 but `public final` in 3.0.14. The class + name + signature already pin it uniquely.
@@ -21,6 +22,14 @@ internal val roxMainActivityOnCreateFingerprint = Fingerprint(
     parameters = listOf(BUNDLE),
     custom = { method, classDef ->
         classDef.type == MAIN_ACTIVITY && method.name == "onCreate"
+    },
+)
+
+internal val roxMainActivityOnNewIntentFingerprint = Fingerprint(
+    returnType = "V",
+    parameters = listOf(INTENT),
+    custom = { method, classDef ->
+        classDef.type == MAIN_ACTIVITY && method.name == "onNewIntent"
     },
 )
 
@@ -56,6 +65,14 @@ val autoCheckinPatch = bytecodePatch(
         onCreate.addInstructions(
             superCall + 1,
             "invoke-static/range {p0 .. p0}, $AUTO_CHECKIN->onActivityCreate($ACTIVITY)V",
+        )
+
+        // An existing screen that gets the background run's marked intent (WakeScreen.EXTRA) only
+        // sees it here; first instruction, before ROX's own handling. Range form for the same
+        // reason as above (3.0.14's onNewIntent has 18 registers, p0 = v16).
+        roxMainActivityOnNewIntentFingerprint.method.addInstructions(
+            0,
+            "invoke-static/range {p0 .. p1}, $AUTO_CHECKIN->onActivityNewIntent($ACTIVITY$INTENT)V",
         )
     }
 }
