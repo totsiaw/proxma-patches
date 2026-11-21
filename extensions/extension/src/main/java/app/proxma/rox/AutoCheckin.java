@@ -369,9 +369,11 @@ public final class AutoCheckin {
         }
 
         @Override public void onActivityPaused(Activity activity) {
-            // A see-through check-in screen that goes away early becomes a normal screen again.
-            WakeScreen.reveal(activity);
+            // Ending a check-in screen's session closes that screen; doing it first keeps it
+            // see-through on the way out (reveal skips a closing screen).
             if (sSession != null && sSession.host.owns(activity)) sSession.end("paused", false);
+            // A see-through screen that goes away early and isn't closing becomes a normal screen again.
+            WakeScreen.reveal(activity);
         }
 
         @Override public void onActivityStopped(Activity activity) {
@@ -728,16 +730,23 @@ public final class AutoCheckin {
 
         /**
          * The result of a check-in on the screen the background run opened. It goes where a
-         * background result goes, and the screen then closes, unless it only went away (paused,
-         * stopped) and comes back on its own, which starts a fresh session.
+         * background result goes, and the screen then closes, also when it went away (paused,
+         * stopped, destroyed) before the check-in finished.
          */
         void reportWoken(String message) {
             Activity activity = ((ActivityHost) host).activity;
             Context context = activity.getApplicationContext();
             String text = message == null ? "stopped" : message;
             if (text.equals("paused") || text.equals("stopped") || text.equals("destroyed")) {
-                recordBackground(context, "ROX's screen opened but went away before the check-in finished ("
-                    + text + ")" + (shown.isEmpty() ? "" : "; screen showed " + shown));
+                String away = "ROX's screen opened but went away before the check-in finished ("
+                    + text + ")" + (shown.isEmpty() ? "" : "; screen showed " + shown);
+                recordBackground(context, away);
+                Log.i(TAG, "WAKE session ended " + text + " before the check-in finished, closing the screen");
+                if (UnlockService.ranToday(context) && !doneToday(context)) {
+                    Notices.needsYou(context, "Background try: " + away + ".");
+                }
+                // Close it too, so the user is never left on an open ROX screen.
+                WakeScreen.close(activity, 0L);
                 return;
             }
             if (text.equals("not signed in")) {
