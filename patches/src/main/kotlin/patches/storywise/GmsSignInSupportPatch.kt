@@ -2,6 +2,46 @@ package patches.storywise
 
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.patch.bytecodePatch
+import app.morphe.patcher.patch.resourcePatch
+import org.w3c.dom.Element
+
+// ---------------------------------------------------------------------------
+// Signature-spoof permission for microG Google sign-in.
+//
+//   Storywise's Google Sign-In OAuth client is registered in the Google Cloud
+//   project against the ORIGINAL Play app-signing certificate
+//   (SHA-1 378875D7D060897810393424FF25AAB5F93E264B) + package name. microG
+//   (GmsCore) obtains the ID token by asking the SYSTEM PackageManager for the
+//   caller's signing certificate; after Morphe re-signs the APK that is the
+//   throwaway key, so Google answers DEVELOPER_ERROR and no token is returned.
+//
+//   Declaring android.permission.FAKE_PACKAGE_SIGNATURE opts the app into the
+//   signature-spoofing hook that microG-capable ROMs (and GmsCore builds with
+//   signature spoofing) honour, so PackageManager reports the ORIGINAL cert to
+//   microG and the OAuth token request matches the registered client. On a
+//   device with no spoofing support the permission is simply ignored, so adding
+//   it never hurts. (The in-process Firebase X-Android-Cert header is handled
+//   separately by spoofSigningCertPatch.)
+// ---------------------------------------------------------------------------
+private val fakeSignaturePermissionPatch = resourcePatch {
+    finalize {
+        document("AndroidManifest.xml").use { doc ->
+            val manifest = doc.documentElement
+            val permission = "android.permission.FAKE_PACKAGE_SIGNATURE"
+            val existing = doc.getElementsByTagName("uses-permission")
+            val present = (0 until existing.length).any {
+                (existing.item(it) as Element).getAttribute("android:name") == permission
+            }
+            if (!present) {
+                manifest.insertBefore(
+                    doc.createElement("uses-permission")
+                        .apply { setAttribute("android:name", permission) },
+                    manifest.firstChild,
+                )
+            }
+        }
+    }
+}
 
 @Suppress("unused")
 val gmsSignInSupportPatch = bytecodePatch(
@@ -31,11 +71,20 @@ val gmsSignInSupportPatch = bytecodePatch(
         "follow-up HiddenActivity launch is already wrapped in a try/catch and degrades to " +
         "the normal failure callback, so this does not crash.\n" +
         "\n" +
+        "Also declares FAKE_PACKAGE_SIGNATURE so a spoofing-capable microG/ROM reports the " +
+        "original app-signing certificate to microG, letting the OAuth token request match " +
+        "the registered client after re-signing.\n" +
+        "\n" +
         "Enable this instead of \"Bypass login\" when you want to sign in with a Google " +
         "account; leave it off and use \"Skip for now\" / \"Bypass login\" when you use the " +
-        "app without an account.",
+        "app without an account.\n" +
+        "\n" +
+        "Requires a microG/GmsCore build that implements the Credential Manager / Identity " +
+        "(BeginSignIn) flow AND device-level signature spoofing; without those the account " +
+        "picker may still not appear and Google login cannot complete on a de-Googled phone.",
 ) {
     compatibleWith(COMPATIBILITY_STORYWISE)
+    dependsOn(fakeSignaturePermissionPatch)
 
     execute {
         // ---------------------------------------------------------------------
