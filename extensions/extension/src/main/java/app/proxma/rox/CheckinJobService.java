@@ -14,7 +14,6 @@ import android.os.Looper;
 import android.util.Log;
 
 import java.util.Calendar;
-import java.util.Random;
 import java.util.TimeZone;
 
 /**
@@ -37,8 +36,9 @@ public final class CheckinJobService extends JobService {
     private static final long MINUTE = 60L * 1000L;
     private static final long FIRST_DELAY_MS = 20L * MINUTE;
     private static final long RETRY_DELAY_MS = 120L * MINUTE;
-    private static final long DAY_START_OFFSET_MS = 15L * MINUTE;
-    private static final int DAY_START_SPREAD_MIN = 45;
+    // The next day's run, and its alarm, at 00:01 Pakistan time with no spread: the unlock service
+    // it starts must be up before the first unlock of the day, however early that is.
+    private static final long DAY_START_OFFSET_MS = MINUTE;
 
     private static Boolean sDeclared;
 
@@ -99,6 +99,14 @@ public final class CheckinJobService extends JobService {
             } else if (AutoCheckin.signedOutToday(context)) {
                 delay = untilTomorrow();
                 why = "signed out";
+            } else if (UnlockService.active()) {
+                // It checks in at the first unlock and stops; the next look is the next day start.
+                delay = untilTomorrow();
+                why = "the unlock service waits for today's first unlock";
+            } else if (UnlockService.ranToday(context)) {
+                // One try a day at the first unlock; its result is already in a notice.
+                delay = untilTomorrow();
+                why = "tried at today's first unlock";
             } else {
                 int tries = AutoCheckin.backgroundTriesToday(context);
                 if (tries >= AutoCheckin.MAX_BG_TRIES_PER_DAY) {
@@ -129,8 +137,7 @@ public final class CheckinJobService extends JobService {
         next.set(Calendar.MINUTE, 0);
         next.set(Calendar.SECOND, 0);
         next.set(Calendar.MILLISECOND, 0);
-        long spread = new Random().nextInt(DAY_START_SPREAD_MIN) * MINUTE;
-        return Math.max(MINUTE, next.getTimeInMillis() - System.currentTimeMillis() + DAY_START_OFFSET_MS + spread);
+        return Math.max(MINUTE, next.getTimeInMillis() - System.currentTimeMillis() + DAY_START_OFFSET_MS);
     }
 
     private static JobScheduler scheduler(Context context) {
@@ -193,7 +200,23 @@ public final class CheckinJobService extends JobService {
     @Override public boolean onStartJob(final JobParameters params) {
         Log.i(TAG, "BGJOB start, " + (params.getJobId() == NOW_JOB_ID ? "from the wake-up alarm" : "planned run")
             + (Build.VERSION.SDK_INT >= 31 && params.isExpeditedJob() ? ", expedited" : ""));
-        return begin(params, getApplicationContext());
+        final Context context = getApplicationContext();
+        String skip = null;
+        if (UnlockService.active()) {
+            skip = "the unlock service handles today";
+        } else if (!AutoCheckin.doneToday(context) && UnlockService.ranToday(context)) {
+            skip = "already tried at today's first unlock";
+        }
+        if (skip != null) {
+            Log.i(TAG, "BGJOB nothing to do, " + skip);
+            handler.post(new Runnable() {
+                @Override public void run() {
+                    planNext(context);
+                }
+            });
+            return false;
+        }
+        return begin(params, context);
     }
 
     /** Starts the check-in; with the phone locked or dark nothing is opened (see startBackground). */

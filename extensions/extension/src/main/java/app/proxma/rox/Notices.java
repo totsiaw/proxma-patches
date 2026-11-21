@@ -95,7 +95,7 @@ final class Notices {
         }
     }
 
-    private static int smallIcon(Context app) {
+    static int smallIcon(Context app) {
         try {
             ApplicationInfo info = app.getPackageManager()
                 .getApplicationInfo(app.getPackageName(), PackageManager.GET_META_DATA);

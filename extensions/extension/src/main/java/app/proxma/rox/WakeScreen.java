@@ -379,6 +379,9 @@ final class WakeScreen {
                     Log.i(TAG, "WAKE screen closed" + (wasHidden ? " (it was see-through)" : ""));
                 } catch (Throwable t) {
                     Log.w(TAG, "WAKE_CLOSE_ERR " + t);
+                } finally {
+                    // The try opened at the unlock is over, however it went.
+                    UnlockService.screenClosed();
                 }
             }
         }, delayMs);

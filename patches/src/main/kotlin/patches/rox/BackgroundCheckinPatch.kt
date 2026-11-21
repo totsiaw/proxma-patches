@@ -13,8 +13,18 @@ import org.w3c.dom.Element
 private const val JOB_SERVICE_CLASS = "Lapp/proxma/rox/CheckinJobService;"
 private const val JOB_SERVICE = "app.proxma.rox.CheckinJobService"
 private const val ALARM_RECEIVER = "app.proxma.rox.CheckinAlarm"
+private const val UNLOCK_SERVICE = "app.proxma.rox.UnlockService"
+private const val SPECIAL_USE_SUBTYPE =
+    "Waits for the user's first unlock of the day, then opens the app's own screen for a moment " +
+        "to do the daily check-in the user turned on"
 private val WAKE_PERMISSIONS = listOf(
+    // Appear on top: what lets ROX open its own screen from the background.
     "android.permission.SYSTEM_ALERT_WINDOW",
+    // The foreground service that waits for the first unlock of the day.
+    "android.permission.FOREGROUND_SERVICE",
+    "android.permission.FOREGROUND_SERVICE_SPECIAL_USE",
+    // Sets the planned alarm again after a reboot (alarms don't survive one).
+    "android.permission.RECEIVE_BOOT_COMPLETED",
 )
 
 private val checkinJobServiceManifestPatch = resourcePatch {
@@ -26,6 +36,7 @@ private val checkinJobServiceManifestPatch = resourcePatch {
             val application = doc.getElementsByTagName("application").item(0) as Element
             // What lets the background run open ROX's own screen, where the check-in works:
             // "Appear on top" once the user turns it on. Nothing opens over the lock screen.
+            // ROX 3.0.14 already holds FOREGROUND_SERVICE and RECEIVE_BOOT_COMPLETED; added only if missing.
             val manifest = doc.documentElement
             val permissions = doc.getElementsByTagName("uses-permission")
             for (permission in WAKE_PERMISSIONS) {
@@ -54,7 +65,27 @@ private val checkinJobServiceManifestPatch = resourcePatch {
                     },
                 )
             }
-            // The wake-up alarm that starts the check-in on time while Doze holds the job back.
+            // Started by the wake-up alarm; waits for the first unlock of the day and checks in then.
+            if ((0 until services.length).none {
+                    (services.item(it) as Element).getAttribute("android:name") == UNLOCK_SERVICE
+                }
+            ) {
+                application.appendChild(
+                    doc.createElement("service").apply {
+                        setAttribute("android:name", UNLOCK_SERVICE)
+                        setAttribute("android:foregroundServiceType", "specialUse")
+                        setAttribute("android:exported", "false")
+                        appendChild(
+                            doc.createElement("property").apply {
+                                setAttribute("android:name", "android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE")
+                                setAttribute("android:value", SPECIAL_USE_SUBTYPE)
+                            },
+                        )
+                    },
+                )
+            }
+            // The wake-up alarm that starts the check-in on time while Doze holds the job back. It
+            // also gets the boot broadcast, to set the alarm again after a reboot.
             val receivers = doc.getElementsByTagName("receiver")
             if ((0 until receivers.length).none {
                     (receivers.item(it) as Element).getAttribute("android:name") == ALARM_RECEIVER
@@ -64,6 +95,15 @@ private val checkinJobServiceManifestPatch = resourcePatch {
                     doc.createElement("receiver").apply {
                         setAttribute("android:name", ALARM_RECEIVER)
                         setAttribute("android:exported", "false")
+                        appendChild(
+                            doc.createElement("intent-filter").apply {
+                                appendChild(
+                                    doc.createElement("action").apply {
+                                        setAttribute("android:name", "android.intent.action.BOOT_COMPLETED")
+                                    },
+                                )
+                            },
+                        )
                     },
                 )
             }
@@ -74,15 +114,15 @@ private val checkinJobServiceManifestPatch = resourcePatch {
 @Suppress("unused")
 val backgroundCheckinPatch = bytecodePatch(
     name = "Auto check-in in the background",
-    description = "Does the daily streak check-in without you opening ROX. Shortly after midnight " +
-        "(Pakistan time) an alarm that also fires while the phone sleeps wakes ROX; if today's check-in " +
-        "isn't done yet and the phone is unlocked, ROX opens its own screen for a moment, presses Check-in " +
-        "and closes again. That screen is see-through and lets your taps through, so you keep using what " +
-        "you had open. Nothing opens while the phone is locked or the screen is off. " +
-        "ROX needs \"Appear on top\" to open itself; while it is off, a notification on the next " +
-        "app open asks you to turn it on. " +
-        "It retries up to three times a day. A notification says when it worked, or asks " +
-        "you to tap it if it couldn't; the next time you open ROX a short message also says what the last " +
+    description = "Does the daily streak check-in without you opening ROX, the first time you unlock your " +
+        "phone each day. Just after midnight (Pakistan time) an alarm that also fires while the phone sleeps " +
+        "starts a small service with a silent notice (\"ROX will check in when you unlock your phone\"). " +
+        "When you next unlock the phone and today's check-in isn't done, ROX opens its own screen for a " +
+        "moment, presses Check-in and closes again; that screen is see-through and lets your taps through, " +
+        "so you keep using what you had open. Nothing opens while the phone is locked or the screen is off, " +
+        "and it tries once a day. ROX needs \"Appear on top\" to open itself; while it is off, a " +
+        "notification asks you to turn it on. A notification says when it worked, or asks you to tap " +
+        "it if it couldn't; the next time you open ROX a short message also says what the last " +
         "background try did. You must be signed in, and ROX must have been opened once after installing. " +
         "Force-stopping ROX stops it until the next time you open the app.",
 ) {

@@ -149,7 +149,10 @@ public final class AutoCheckin {
         sSession.run();
     }
 
-    /** Called from CheckinJobService on the main thread. Returns true when a session started. */
+    /**
+     * Called from CheckinJobService and UnlockService on the main thread. Returns true when ROX's
+     * screen was asked to open for the check-in.
+     */
     static boolean startBackground(Context context, Runnable onDone) {
         try {
             if (sSession != null) {
@@ -157,6 +160,14 @@ public final class AutoCheckin {
                 return false;
             }
             Context app = context.getApplicationContext();
+            // The job and the unlock service can both get here around the same time (after a
+            // reboot, say); a screen asked for moments ago and not open yet must not be asked twice.
+            long asked = prefs(app).getLong(WakeScreen.KEY_OPEN_ASKED_AT, 0L);
+            long sinceAsked = System.currentTimeMillis() - asked;
+            if (asked > 0 && sinceAsked >= 0 && sinceAsked < 60_000L && !WakeScreen.openedSince(app, asked)) {
+                Log.i(TAG, "BG skipped, ROX's screen was asked for " + (sinceAsked / 1000L) + "s ago and isn't open yet");
+                return false;
+            }
             Activity main = sMain.get();
             if (main != null && !main.isDestroyed()) {
                 // A ROX screen left in the background used to skip every background run for as
@@ -320,9 +331,14 @@ public final class AutoCheckin {
     }
 
     static String today() {
+        return dayOf(System.currentTimeMillis());
+    }
+
+    /** The ROX day (Pakistan time) a wall-clock time falls on, as yyyy-MM-dd. */
+    static String dayOf(long at) {
         SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
         format.setTimeZone(TimeZone.getTimeZone("Asia/Karachi"));
-        return format.format(new Date());
+        return format.format(new Date(at));
     }
 
     private static boolean isMain(Activity activity) {
@@ -640,6 +656,8 @@ public final class AutoCheckin {
                 .putString(KEY_DONE_DAY, today()).commit();
             // The background job has nothing left to do today; move it to tomorrow.
             if (!host.background()) CheckinJobService.planNext(host.context());
+            // Nor has the unlock service, unless this is its own check-in (it stops when that ends).
+            UnlockService.checkinDone();
         }
 
         void end(String message, boolean toast) {
@@ -736,7 +754,9 @@ public final class AutoCheckin {
                         : "; ROX opened for a moment to do it."));
             } else if (already) {
                 Notices.clear(context);
-            } else if (backgroundTriesToday(context) >= MAX_BG_TRIES_PER_DAY || signedOutToday(context)) {
+            } else if (backgroundTriesToday(context) >= MAX_BG_TRIES_PER_DAY || signedOutToday(context)
+                || UnlockService.ranToday(context)) {
+                // The check-in at the first unlock is the only one of the day: say it didn't work.
                 Notices.needsYou(context, "Background try: " + text + ".");
             }
             // Give the app a moment to finish the request it just sent before the screen goes.
