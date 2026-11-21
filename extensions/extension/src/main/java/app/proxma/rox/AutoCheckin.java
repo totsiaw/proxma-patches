@@ -183,16 +183,14 @@ public final class AutoCheckin {
                 Log.i(TAG, "BG skipped, background tries used up " + tries);
                 return false;
             }
-            if (WakeScreen.shouldWaitForUnlock(app)) {
-                // Behind the lock screen Android drops every start Appear on top asks for, and
-                // full-screen notices aren't allowed: don't use up a try, run after the unlock.
-                Log.i(TAG, "BG phone locked, no full-screen notices: waiting for the unlock");
-                boolean first = !WakeScreen.waitingForUnlock(app);
-                WakeScreen.waitForUnlock(app);
-                if (first) recordBackground(app, "phone was locked; the check-in runs right after you unlock it");
+            if (WakeScreen.lockedOrDark(app)) {
+                // Nothing checks in over the lock screen or with the display off any more; the
+                // check-in happens at the first unlock instead (UnlockService). Uses no try.
+                Log.i(TAG, "BG phone locked or screen off, not opening ROX");
+                recordBackground(app, "phone was locked; no check-in over the lock screen, "
+                    + "it runs when you unlock the phone");
                 return false;
             }
-            WakeScreen.clearUnlockWait(app);
             prefs.edit().putString(KEY_BG_TRY_DAY, today).putInt(KEY_BG_TRIES, tries + 1).commit();
             // ROX's own screen is where the check-in is known to work, so open it when Android
             // allows that.
@@ -200,11 +198,9 @@ public final class AutoCheckin {
             if (route != null) {
                 Log.i(TAG, "BG opened ROX's screen (" + route + "), earlier background tries today " + tries);
                 // Replaced by the screen's own result as soon as it opens.
-                recordBackground(app, "asked Android to open ROX's screen (" + route + ") but it didn't open"
-                    + (route.equals("full-screen notice")
-                        ? "; if the phone was in use, the notice needed a tap" : ""));
+                recordBackground(app, "asked Android to open ROX's screen (" + route + ") but it didn't open");
                 if (onDone != null) {
-                    // Keep the job until the backup notice has had its chance.
+                    // Keep the job until the start check has had its chance.
                     new Handler(Looper.getMainLooper()).postDelayed(onDone, WakeScreen.BACKUP_NOTICE_MS + 15_000L);
                 }
                 return true;
@@ -264,15 +260,6 @@ public final class AutoCheckin {
     static int backgroundTriesToday(Context context) {
         SharedPreferences prefs = prefs(context);
         return today().equals(prefs.getString(KEY_BG_TRY_DAY, "")) ? prefs.getInt(KEY_BG_TRIES, 0) : 0;
-    }
-
-    /** Gives back a background try that never got to run (the phone stayed locked). */
-    static void refundBackgroundTry(Context context) {
-        SharedPreferences prefs = prefs(context);
-        int tries = backgroundTriesToday(context);
-        if (tries <= 0) return;
-        prefs.edit().putString(KEY_BG_TRY_DAY, today()).putInt(KEY_BG_TRIES, tries - 1).commit();
-        Log.i(TAG, "BG try given back, tries today now " + (tries - 1));
     }
 
     static boolean signedOutToday(Context context) {
@@ -358,7 +345,7 @@ public final class AutoCheckin {
             try {
                 if (!isMain(activity)) return;
                 sMainVisible++;
-                // Before the resume, so a brought-back screen is let over the lock screen in time.
+                // Before the resume, so a brought-back screen is taken (made see-through) in time.
                 WakeScreen.onShown(activity, "started");
             } catch (Throwable t) {
                 Log.w(TAG, "STARTED_ERR " + t);

@@ -14,7 +14,6 @@ private const val JOB_SERVICE_CLASS = "Lapp/proxma/rox/CheckinJobService;"
 private const val JOB_SERVICE = "app.proxma.rox.CheckinJobService"
 private const val ALARM_RECEIVER = "app.proxma.rox.CheckinAlarm"
 private val WAKE_PERMISSIONS = listOf(
-    "android.permission.USE_FULL_SCREEN_INTENT",
     "android.permission.SYSTEM_ALERT_WINDOW",
 )
 
@@ -26,7 +25,7 @@ private val checkinJobServiceManifestPatch = resourcePatch {
         document("AndroidManifest.xml").use { doc ->
             val application = doc.getElementsByTagName("application").item(0) as Element
             // What lets the background run open ROX's own screen, where the check-in works:
-            // a full-screen notification, or "Appear on top" once the user turns it on.
+            // "Appear on top" once the user turns it on. Nothing opens over the lock screen.
             val manifest = doc.documentElement
             val permissions = doc.getElementsByTagName("uses-permission")
             for (permission in WAKE_PERMISSIONS) {
@@ -77,12 +76,11 @@ val backgroundCheckinPatch = bytecodePatch(
     name = "Auto check-in in the background",
     description = "Does the daily streak check-in without you opening ROX. Shortly after midnight " +
         "(Pakistan time) an alarm that also fires while the phone sleeps wakes ROX; if today's check-in " +
-        "isn't done yet, ROX opens its own screen for a moment, presses Check-in and closes again. While " +
-        "the phone is in use that screen is see-through and lets your taps through, so you keep using what " +
-        "you had open. While the phone is locked it opens over the lock screen if full-screen notifications " +
-        "are allowed for ROX; otherwise the check-in waits and runs right after you next unlock the phone. " +
-        "If Android doesn't allow ROX to open itself, a notification on the next " +
-        "app open asks you to turn on \"Appear on top\" for ROX; until then it tries off-screen. " +
+        "isn't done yet and the phone is unlocked, ROX opens its own screen for a moment, presses Check-in " +
+        "and closes again. That screen is see-through and lets your taps through, so you keep using what " +
+        "you had open. Nothing opens while the phone is locked or the screen is off. " +
+        "ROX needs \"Appear on top\" to open itself; while it is off, a notification on the next " +
+        "app open asks you to turn it on. " +
         "It retries up to three times a day. A notification says when it worked, or asks " +
         "you to tap it if it couldn't; the next time you open ROX a short message also says what the last " +
         "background try did. You must be signed in, and ROX must have been opened once after installing. " +

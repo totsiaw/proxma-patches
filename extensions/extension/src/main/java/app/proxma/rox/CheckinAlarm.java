@@ -13,7 +13,7 @@ import android.util.Log;
  * until the morning or later, so the background check-in ran late or not at all. ROX already holds
  * USE_EXACT_ALARM, so the same planned time is also set as an exact alarm that fires in Doze. When
  * it fires, this asks for an expedited job, which the system runs straight away with network even
- * in Doze; that job does the same off-screen check-in as the planned one (CheckinJobService).
+ * in Doze; that job does the same check-in as the planned one (CheckinJobService).
  */
 public final class CheckinAlarm extends BroadcastReceiver {
 
