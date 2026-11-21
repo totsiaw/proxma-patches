@@ -47,7 +47,9 @@ public final class CheckinAlarm extends BroadcastReceiver {
             }
             // An exact alarm may start a foreground service; it waits for the first unlock.
             if (!UnlockService.start(app, "wake-up alarm")) {
-                // Refused (no exact alarm access, battery restricted): the job opens ROX only
+                // Refused (no exact alarm access, battery restricted), or not started because it
+                // couldn't go foreground (start() checks the permissions and its notice channel
+                // first, since a started one that can't would crash ROX): the job opens ROX only
                 // while the phone is unlocked, otherwise it looks again later.
                 Log.i(TAG, "ALARM unlock service refused, falling back to the job");
                 CheckinJobService.runNow(app);

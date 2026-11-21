@@ -9,6 +9,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.Handler;
@@ -78,10 +79,22 @@ public final class UnlockService extends Service {
     // The ROX day (Pakistan time) this service was started for.
     private String serviceDay = "";
 
-    /** From the wake-up alarm or the boot broadcast. False when Android refuses the start. */
+    /**
+     * From the wake-up alarm or the boot broadcast. False when Android refuses the start, or when a
+     * check shows the service couldn't go foreground (the callers then use the job instead).
+     */
     static boolean start(Context context, String why) {
         try {
             Context app = context.getApplicationContext();
+            // A service started with startForegroundService that never reaches startForeground
+            // crashes ROX when Android's time limit runs out, and nothing can undo that once
+            // started. So rule out the cheap-to-check causes first.
+            String blocked = foregroundBlocker(app);
+            if (blocked != null) {
+                Log.w(TAG, "UNLOCK not starting the service, it couldn't go foreground (" + blocked
+                    + "); the job takes over");
+                return false;
+            }
             Intent intent = new Intent(app, UnlockService.class).putExtra(EXTRA_WHY, why);
             app.startForegroundService(intent);
             Log.i(TAG, "UNLOCK service start asked (" + why + ")");
@@ -188,12 +201,15 @@ public final class UnlockService extends Service {
             stopping = true;
             if (intent != null) {
                 CheckinJobService.runNow(app);
-                // Started with startForegroundService (the alarm or the boot broadcast): stopping
-                // a service that never called startForeground makes Android crash ROX at once
-                // ("did not then call startForeground"). Leave it started; it does nothing, and
-                // Android ends it when its foreground time limit runs out.
+                // Started with startForegroundService (the alarm or the boot broadcast) and every
+                // startForeground above failed: Android will end ROX with a crash when the
+                // foreground start time limit runs out, whatever happens here (stopping the service
+                // now crashes it at once instead). Nothing in this service can prevent that; start()
+                // checks the likely causes beforehand so this is not normally reached. Leave the
+                // service started and idle; the job planned above does today's check-in after the
+                // restart.
                 Log.w(TAG, "UNLOCK couldn't go foreground (" + refused + "), job planned instead; "
-                    + "not stopping the service, which would crash ROX");
+                    + "Android will crash ROX when the foreground start time limit runs out");
             } else {
                 // A restart by Android after it ended the process: no startForeground is owed,
                 // so stopping is safe.
@@ -452,7 +468,8 @@ public final class UnlockService extends Service {
     /**
      * Puts the service in the foreground; null when that worked, else why not. Tries the
      * specialUse type, then the manifest's type, then a plain notice, since a service started
-     * with startForegroundService that never gets here is ended by Android with a crash.
+     * with startForegroundService that never gets here is ended by Android with a crash (if all
+     * three fail, that crash still comes; see onStartCommand).
      */
     private String goForeground(Context app) {
         StringBuilder why = new StringBuilder();
@@ -500,17 +517,47 @@ public final class UnlockService extends Service {
         return why.toString();
     }
 
+    /**
+     * Null when the service should be able to go foreground; else why not. Checks the foreground
+     * service permissions (missing ones make startForeground throw) and that the notice's channel
+     * exists, creating it first (a notice on a missing channel is rejected). Notifications turned
+     * off for ROX do not block it: Android still lets the service go foreground, the notice is just
+     * not shown.
+     */
+    private static String foregroundBlocker(Context app) {
+        try {
+            if (app.checkSelfPermission("android.permission.FOREGROUND_SERVICE")
+                != PackageManager.PERMISSION_GRANTED) {
+                return "no FOREGROUND_SERVICE permission";
+            }
+            if (Build.VERSION.SDK_INT >= 34 && app.checkSelfPermission(
+                "android.permission.FOREGROUND_SERVICE_SPECIAL_USE") != PackageManager.PERMISSION_GRANTED) {
+                return "no FOREGROUND_SERVICE_SPECIAL_USE permission";
+            }
+            NotificationManager manager = (NotificationManager) app.getSystemService(Context.NOTIFICATION_SERVICE);
+            if (manager == null) return "no notification manager";
+            ensureChannel(manager);
+            if (manager.getNotificationChannel(CHANNEL) == null) return "its notice channel couldn't be made";
+            return null;
+        } catch (Throwable t) {
+            return "check failed: " + t.getClass().getSimpleName();
+        }
+    }
+
+    private static void ensureChannel(NotificationManager manager) {
+        if (manager.getNotificationChannel(CHANNEL) != null) return;
+        NotificationChannel channel = new NotificationChannel(CHANNEL, "Check-in at unlock (patch)",
+            NotificationManager.IMPORTANCE_LOW);
+        channel.setDescription("Shown while ROX waits for you to unlock your phone to do the daily check-in");
+        channel.setSound(null, null);
+        channel.enableVibration(false);
+        channel.setShowBadge(false);
+        manager.createNotificationChannel(channel);
+    }
+
     private static Notification notice(Context app) {
         NotificationManager manager = (NotificationManager) app.getSystemService(Context.NOTIFICATION_SERVICE);
-        if (manager != null && manager.getNotificationChannel(CHANNEL) == null) {
-            NotificationChannel channel = new NotificationChannel(CHANNEL, "Check-in at unlock (patch)",
-                NotificationManager.IMPORTANCE_LOW);
-            channel.setDescription("Shown while ROX waits for you to unlock your phone to do the daily check-in");
-            channel.setSound(null, null);
-            channel.enableVibration(false);
-            channel.setShowBadge(false);
-            manager.createNotificationChannel(channel);
-        }
+        if (manager != null) ensureChannel(manager);
         return new Notification.Builder(app, CHANNEL)
             .setSmallIcon(Notices.smallIcon(app))
             .setContentTitle("ROX daily check-in")
