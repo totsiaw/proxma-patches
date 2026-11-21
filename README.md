@@ -118,7 +118,7 @@ _Supported version(s): 20.07.001_
 
 ### inDrive (`sinet.startup.inDriver`)
 
-_Supported version(s): 5.188.0, 5.189.0_
+_Supported version(s): 5.188.0, 5.189.0, 5.193.0_
 
 | Patch | Description |
 |-------|-------------|

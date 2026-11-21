@@ -1,3 +1,10 @@
+## [1.28.2](https://github.com/totsiaw/proxma-patches/compare/1.28.1...1.28.2) (2026-11-21)
+
+### Bug Fixes
+
+* **indrive:** branch on the toggle identity the right way round ([bd0152f](https://github.com/totsiaw/proxma-patches/commit/bd0152f9bdddae4e6de1e54869b6e6b5d5bb492f))
+* **indrive:** support 5.193.0 and stop patching when the toggle API changes ([93913b9](https://github.com/totsiaw/proxma-patches/commit/93913b9c1223d4e970f22d8ef49ad915fb3df8ed))
+
 ## [1.28.1](https://github.com/totsiaw/proxma-patches/compare/1.28.0...1.28.1) (2026-11-02)
 
 ### Bug Fixes
