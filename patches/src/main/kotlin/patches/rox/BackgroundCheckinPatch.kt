@@ -122,7 +122,8 @@ val backgroundCheckinPatch = bytecodePatch(
         "Android 11 and later that screen is fully transparent and taps go through it to the app below, but " +
         "the Back button and the keyboard reach ROX until it closes; where Android won't make it transparent, " +
         "ROX shows for that moment. Nothing opens while the phone is locked or the screen is off, " +
-        "and it tries once a day. ROX needs \"Appear on top\" to open itself; while it is off, a " +
+        "and it tries once a day; if you switch apps before the check-in is through, it tries again at your " +
+        "next unlock, up to three unlocks a day. ROX needs \"Appear on top\" to open itself; while it is off, a " +
         "notification asks you to turn it on. A notification says when it worked, or asks you to tap " +
         "it if it couldn't; the next time you open ROX a short message also says what the last " +
         "background try did. You must be signed in, and ROX must have been opened once after installing. " +

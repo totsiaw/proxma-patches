@@ -31,16 +31,28 @@ import java.util.TimeZone;
  *
  * On the first unlock of the day, if today's check-in isn't done, it opens ROX's own screen
  * see-through through Appear on top (WakeScreen), where AutoCheckin presses Check-in and closes the
- * screen again; the user taps nothing. One try per day: the day is marked before the screen opens,
- * so a second unlock, or a try that didn't work, never opens ROX again that day. The service stops
- * when that session ends, 90 seconds after the unlock at the latest, or at the first screen-on,
- * unlock or timeout after midnight (a delayed handler would stall in deep sleep); the next alarm
- * starts it again for the new day.
+ * screen again; the user taps nothing. The day is marked before the screen opens, so a try that
+ * ran to a result (done, or a miss such as no Check-in button) never opens ROX again that day.
+ * Taps pass through the see-through screen, so the user's first touch after the unlock often
+ * pauses it before the check-in is through; such an interrupted try is given back and the next
+ * unlock tries again, up to MAX_UNLOCK_TRIES unlocks a day (tryInterrupted). Between tries the
+ * service just waits, with no timeout. It stops when a try's session ends with a result, 90
+ * seconds into a try at the latest, when the tries are used up, or at the first screen-on, unlock
+ * or timeout after midnight (a delayed handler would stall in deep sleep); the next alarm starts
+ * it again for the new day.
  */
 public final class UnlockService extends Service {
 
     private static final String TAG = "PROXMA_ROX";
     static final String KEY_UNLOCK_RUN_DAY = "unlock_run_day";
+    // Unlocks taken for the check-in on the ROX day in KEY_UNLOCK_TRIES_DAY, interrupted ones too.
+    static final String KEY_UNLOCK_TRIES = "unlock_tries";
+    static final String KEY_UNLOCK_TRIES_DAY = "unlock_tries_day";
+    // The ROX day the "tries used up" notice was posted for: at most one a day.
+    private static final String KEY_UNLOCK_CAP_NOTICE_DAY = "unlock_cap_notice_day";
+    // Unlocks a day whose see-through screen the user may interrupt (switch app, open another)
+    // before Check-in is through; each interrupted one is given back for the next unlock.
+    static final int MAX_UNLOCK_TRIES = 3;
     private static final String EXTRA_WHY = "why";
     private static final String CHANNEL = "proxma_rox_unlock";
     private static final int NOTICE_ID = 0x524f5808;
@@ -94,6 +106,56 @@ public final class UnlockService extends Service {
     static void checkinDone() {
         UnlockService service = sRunning;
         if (service != null && !service.attempting) service.finish("already done today, stopping");
+    }
+
+    /** Unlocks taken for the check-in today (Pakistan time), interrupted ones included. */
+    static int triesToday(Context context) {
+        SharedPreferences prefs = AutoCheckin.prefs(context);
+        return AutoCheckin.today().equals(prefs.getString(KEY_UNLOCK_TRIES_DAY, ""))
+            ? prefs.getInt(KEY_UNLOCK_TRIES, 0) : 0;
+    }
+
+    /**
+     * From AutoCheckin when the see-through screen of today's unlock try went away (paused,
+     * stopped, destroyed) before the check-in got a result: the user's first touch after the unlock
+     * (tapping the app below, opening another app) pauses it. Until MAX_UNLOCK_TRIES unlocks are
+     * used, the try is given back and the service keeps waiting for the next unlock. Pressed but no
+     * result yet counts as interrupted too: nothing marks the day done on a press alone, and on the
+     * retry ROX says "already checked in", which marks it done. True when the service took it
+     * (retry planned or tries used up); false when no unlock try of the service was under way.
+     */
+    static boolean tryInterrupted(Context context, boolean pressed) {
+        UnlockService service = sRunning;
+        if (service == null || service.stopping || !service.attempting) return false;
+        Context app = context.getApplicationContext();
+        int tries = triesToday(app);
+        if (tries < MAX_UNLOCK_TRIES) {
+            SharedPreferences prefs = AutoCheckin.prefs(app);
+            if (AutoCheckin.today().equals(prefs.getString(KEY_UNLOCK_RUN_DAY, ""))) {
+                prefs.edit().remove(KEY_UNLOCK_RUN_DAY).commit();
+            }
+            service.attempting = false;
+            service.opened = false;
+            // Ends the per-try safety and the open watch: nothing stops a service that waits.
+            service.handler.removeCallbacksAndMessages(null);
+            Log.i(TAG, "UNLOCK try interrupted before check-in, will retry at next unlock ("
+                + tries + "/" + MAX_UNLOCK_TRIES + ")" + (pressed ? ", Check-in was pressed but had no result" : ""));
+            return true;
+        }
+        Log.i(TAG, "UNLOCK try cap reached for today");
+        capNotice(app);
+        service.finish("tries used up today, stopping");
+        return true;
+    }
+
+    /** The one "not done" notice a day for unlock tries that were all interrupted. */
+    private static void capNotice(Context app) {
+        SharedPreferences prefs = AutoCheckin.prefs(app);
+        String today = AutoCheckin.today();
+        if (today.equals(prefs.getString(KEY_UNLOCK_CAP_NOTICE_DAY, ""))) return;
+        prefs.edit().putString(KEY_UNLOCK_CAP_NOTICE_DAY, today).commit();
+        Notices.needsYou(app, "ROX's screen was closed " + MAX_UNLOCK_TRIES
+            + " times today before it could check in (each time you unlocked and used the phone straight away).");
     }
 
     /** From WakeScreen once the check-in screen has been closed: the try is over. */
@@ -215,17 +277,37 @@ public final class UnlockService extends Service {
         }
     }
 
-    /** Takes this unlock for today's check-in: marks the day first, then opens ROX after a moment. */
+    /**
+     * Takes this unlock for today's check-in: marks the day and counts the try first, then opens
+     * ROX after a moment. Only an interruption by the user (tryInterrupted) gives the try back.
+     */
     private void present(final Context app) {
         if (attempting || ranToday(app)) {
             Log.i(TAG, "UNLOCK already ran today, ignoring");
             return;
         }
+        int tries = triesToday(app);
+        if (tries >= MAX_UNLOCK_TRIES) {
+            // Normally caught when the last try ends; this is a restart after that.
+            Log.i(TAG, "UNLOCK try cap reached for today");
+            capNotice(app);
+            AutoCheckin.prefs(app).edit().putString(KEY_UNLOCK_RUN_DAY, AutoCheckin.today()).commit();
+            finish("tries used up today, stopping");
+            return;
+        }
         final String day = AutoCheckin.today();
-        // Written before anything opens, so this is the day's only try whatever happens next.
-        AutoCheckin.prefs(app).edit().putString(KEY_UNLOCK_RUN_DAY, day).commit();
+        // Written before anything opens, so whatever happens next (a crash, Android ending ROX)
+        // this unlock counts, and the day is done unless the user interrupts the try.
+        AutoCheckin.prefs(app).edit()
+            .putString(KEY_UNLOCK_RUN_DAY, day)
+            .putString(KEY_UNLOCK_TRIES_DAY, day)
+            .putInt(KEY_UNLOCK_TRIES, tries + 1)
+            .commit();
         attempting = true;
         opened = false;
+        Log.i(TAG, "UNLOCK try " + (tries + 1) + "/" + MAX_UNLOCK_TRIES + " today");
+        // Per-try safety: only while a try is under way; an interrupted try cancels it and the
+        // service then waits for the next unlock with no timeout.
         handler.postDelayed(new Runnable() {
             @Override public void run() {
                 if (dayRolled("timeout")) return;
@@ -247,11 +329,15 @@ public final class UnlockService extends Service {
                 return;
             }
             if (WakeScreen.lockedOrDark(app)) {
-                // Locked again within the settle time: nothing opened, so give the day back.
+                // Locked again within the settle time: nothing opened, so give the day and the
+                // try back.
                 SharedPreferences prefs = AutoCheckin.prefs(app);
-                if (day.equals(prefs.getString(KEY_UNLOCK_RUN_DAY, ""))) {
-                    prefs.edit().remove(KEY_UNLOCK_RUN_DAY).commit();
+                SharedPreferences.Editor edit = prefs.edit();
+                if (day.equals(prefs.getString(KEY_UNLOCK_RUN_DAY, ""))) edit.remove(KEY_UNLOCK_RUN_DAY);
+                if (day.equals(prefs.getString(KEY_UNLOCK_TRIES_DAY, ""))) {
+                    edit.putInt(KEY_UNLOCK_TRIES, Math.max(0, prefs.getInt(KEY_UNLOCK_TRIES, 0) - 1));
                 }
+                edit.commit();
                 attempting = false;
                 handler.removeCallbacksAndMessages(null);
                 Log.i(TAG, "UNLOCK phone locked again before opening, waiting for the next unlock");
@@ -287,7 +373,8 @@ public final class UnlockService extends Service {
                         opened = true;
                         Log.i(TAG, "UNLOCK screen opened");
                     }
-                    // From here the session's end (screenClosed) or the safety timeout stops it.
+                    // From here the session's end (screenClosed, or tryInterrupted when the user
+                    // interrupts it) or the per-try safety timeout ends the try.
                     return;
                 }
                 if (SystemClock.uptimeMillis() >= until) {

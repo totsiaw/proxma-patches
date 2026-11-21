@@ -748,13 +748,18 @@ public final class AutoCheckin {
             Context context = activity.getApplicationContext();
             String text = message == null ? "stopped" : message;
             if (text.equals("paused") || text.equals("stopped") || text.equals("destroyed")) {
+                // claimed and already end the session themselves, so here there is no result yet.
+                boolean pressed = phase == Phase.WAIT_RESULT;
                 String away = "ROX's screen opened but went away before the check-in finished ("
-                    + text + ")" + (shown.isEmpty() ? "" : "; screen showed " + shown);
+                    + text + (pressed ? ", Check-in pressed, no result yet" : "") + ")"
+                    + (shown.isEmpty() ? "" : "; screen showed " + shown);
                 recordBackground(context, away);
-                Log.i(TAG, "WAKE session ended " + text + " before the check-in finished, closing the screen");
-                if (UnlockService.ranToday(context) && !doneToday(context)) {
-                    Notices.needsYou(context, "Background try: " + away + ".");
-                }
+                Log.i(TAG, "WAKE session ended " + text + (pressed ? " after Check-in was pressed, no result yet"
+                    : " before Check-in was pressed") + ", closing the screen");
+                // The user's first touch after the unlock usually does this (taps pass through the
+                // see-through screen). The unlock service gives the try back for the next unlock and
+                // posts the one notice of the day only when its tries are used up; no notice here.
+                UnlockService.tryInterrupted(context, pressed);
                 // Close it too, so the user is never left on an open ROX screen.
                 WakeScreen.close(activity, 0L);
                 return;
