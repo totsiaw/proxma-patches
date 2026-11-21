@@ -18,7 +18,9 @@ import java.util.TimeZone;
 
 /**
  * Runs the daily check-in in the background. A one-off job is planned for shortly after the ROX
- * day starts (midnight, Pakistan time); when it runs, today's check-in is not done yet and the
+ * day starts (midnight, Pakistan time), a few minutes after the wake-up alarm (CheckinAlarm) set
+ * for the same run, so the alarm starts the unlock service first; when the job runs, today's
+ * check-in is not done yet and the
  * phone is unlocked, it opens ROX's screen see-through and presses Check-in there (WakeScreen,
  * AutoCheckin). With the phone locked it opens nothing and looks again two hours later. After a
  * miss it tries again two hours later, up to three times a day, then plans tomorrow. Once today is
@@ -39,6 +41,9 @@ public final class CheckinJobService extends JobService {
     // The next day's run, and its alarm, at 00:01 Pakistan time with no spread: the unlock service
     // it starts must be up before the first unlock of the day, however early that is.
     private static final long DAY_START_OFFSET_MS = MINUTE;
+    // The job runs this long after the run's alarm. Both at 00:01 let the job win on a locked
+    // phone, whose retry then moved the alarm, and with it the unlock service, two hours later.
+    private static final long JOB_AFTER_ALARM_MS = 5L * MINUTE;
 
     private static Boolean sDeclared;
 
@@ -77,8 +82,9 @@ public final class CheckinJobService extends JobService {
             long at = AutoCheckin.prefs(context).getLong(KEY_PLANNED_AT, 0L);
             Log.i(TAG, "BGJOB already planned for " + AutoCheckin.clock(at));
             // Builds before the wake-up alarm planned only the job; add the alarm for the same time.
-            if (at > System.currentTimeMillis()
-                && AutoCheckin.prefs(context).getLong(CheckinAlarm.KEY_ALARM_SET_AT, 0L) != at) {
+            // A pending alarm that is earlier is kept: it is never moved later.
+            long alarm = CheckinAlarm.pendingAt(context);
+            if (at > System.currentTimeMillis() && (alarm == 0L || alarm > at)) {
                 CheckinAlarm.set(context, at);
             }
             return;
@@ -93,6 +99,7 @@ public final class CheckinJobService extends JobService {
             if (!declared(context)) return;
             long delay;
             String why;
+            boolean keepEarlierAlarm = false;
             if (AutoCheckin.doneToday(context)) {
                 delay = untilTomorrow();
                 why = "done today";
@@ -117,6 +124,9 @@ public final class CheckinJobService extends JobService {
                     // after the retry gap rather than soon, so a locked night costs few wake-ups.
                     delay = Math.min(RETRY_DELAY_MS, untilTomorrow());
                     why = "phone locked, earlier tries " + tries;
+                    // A job that ran before today's alarm must not push that alarm, and so the
+                    // unlock service it starts, back by the retry gap.
+                    keepEarlierAlarm = true;
                 } else {
                     delay = tries == 0 ? FIRST_DELAY_MS : RETRY_DELAY_MS;
                     // A retry must not cross into the next day's first run.
@@ -124,7 +134,7 @@ public final class CheckinJobService extends JobService {
                     why = "not done yet, earlier tries " + tries;
                 }
             }
-            schedule(context, delay, why);
+            schedule(context, delay, why, keepEarlierAlarm);
         } catch (Throwable t) {
             Log.w(TAG, "BGJOB_PLAN_ERR " + t);
         }
@@ -146,26 +156,51 @@ public final class CheckinJobService extends JobService {
         return scheduler;
     }
 
-    private static void schedule(Context context, long delayMs, String why) {
+    /**
+     * Plans the next run: the wake-up alarm at now + delay and the job JOB_AFTER_ALARM_MS after it.
+     * With keepEarlierAlarm, a wake-up alarm still waiting to fire before that time is left alone
+     * (never moved later) and the run is planned for it.
+     */
+    private static void schedule(Context context, long delayMs, String why, boolean keepEarlierAlarm) {
         JobScheduler scheduler = scheduler(context);
         if (scheduler == null) return;
+        long now = System.currentTimeMillis();
+        long at = now + delayMs;
+        long jobDelay = delayMs + JOB_AFTER_ALARM_MS;
+        boolean keep = false;
+        if (keepEarlierAlarm) {
+            long pending = CheckinAlarm.pendingAt(context);
+            if (pending > 0 && pending < at) {
+                keep = true;
+                why = why + ", keeping the wake-up alarm already set for " + AutoCheckin.clock(pending);
+                // An alarm that is due but hasn't fired yet (inexact, held by Doze) keeps the
+                // retry gap for the job, so the job doesn't come back every few minutes.
+                if (pending > now) jobDelay = (pending - now) + JOB_AFTER_ALARM_MS;
+                at = pending;
+            }
+        }
         JobInfo info = new JobInfo.Builder(JOB_ID, new ComponentName(context, CheckinJobService.class))
-            .setMinimumLatency(delayMs)
+            .setMinimumLatency(jobDelay)
             .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
             .setRequiresBatteryNotLow(true)
             .setPersisted(true)
             .build();
         int result = scheduler.schedule(info);
-        long at = System.currentTimeMillis() + delayMs;
         if (result == JobScheduler.RESULT_SUCCESS) {
+            // The run's time is its alarm's; the job follows a few minutes later.
             AutoCheckin.prefs(context).edit().putLong(KEY_PLANNED_AT, at).apply();
-            Log.i(TAG, "BGJOB planned for " + AutoCheckin.clock(at) + " (" + why + ")");
+            Log.i(TAG, "BGJOB planned for " + AutoCheckin.clock(now + jobDelay) + ", run due "
+                + AutoCheckin.clock(at) + " (" + why + ")");
         } else {
             Log.w(TAG, "BGJOB plan failed " + result + " (" + why + ")");
         }
-        // Doze holds the job back at night; the alarm fires on time and starts a run itself.
+        // Doze holds the job back at night; the alarm fires on time and starts the unlock service.
         // Whichever comes first does the check-in, the other then finds nothing to do.
-        CheckinAlarm.set(context, at);
+        if (keep) {
+            Log.i(TAG, "ALARM kept for " + AutoCheckin.clock(at));
+        } else {
+            CheckinAlarm.set(context, at);
+        }
     }
 
     /** From the wake-up alarm: run now as an expedited job, which Doze does not hold back. */

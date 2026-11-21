@@ -114,6 +114,25 @@ public final class CheckinAlarm extends BroadcastReceiver {
         }
     }
 
+    /**
+     * The time the wake-up alarm is set for, while it is still waiting to fire; else 0. Not fired
+     * since it was set, and still registered (force-stop and reboots drop it).
+     */
+    static long pendingAt(Context context) {
+        try {
+            SharedPreferences prefs = AutoCheckin.prefs(context);
+            long setFor = prefs.getLong(KEY_ALARM_SET_AT, 0L);
+            if (setFor <= 0 || prefs.getLong(KEY_ALARM_FIRED_AT, 0L) >= setFor) return 0L;
+            Intent intent = new Intent(context, CheckinAlarm.class).setPackage(context.getPackageName());
+            PendingIntent existing = PendingIntent.getBroadcast(context, REQUEST_CODE, intent,
+                PendingIntent.FLAG_NO_CREATE | PendingIntent.FLAG_IMMUTABLE);
+            return existing != null ? setFor : 0L;
+        } catch (Throwable t) {
+            Log.w(TAG, "ALARM_PENDING_ERR " + t);
+            return 0L;
+        }
+    }
+
     private static PendingIntent pendingIntent(Context context) {
         Intent intent = new Intent(context, CheckinAlarm.class).setPackage(context.getPackageName());
         return PendingIntent.getBroadcast(context, REQUEST_CODE, intent,
