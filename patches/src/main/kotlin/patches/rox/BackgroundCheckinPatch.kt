@@ -117,9 +117,11 @@ val backgroundCheckinPatch = bytecodePatch(
     description = "Does the daily streak check-in without you opening ROX, the first time you unlock your " +
         "phone each day. Just after midnight (Pakistan time) an alarm that also fires while the phone sleeps " +
         "starts a small service with a silent notice (\"ROX will check in when you unlock your phone\"). " +
-        "When you next unlock the phone and today's check-in isn't done, ROX opens its own screen for a " +
-        "moment, presses Check-in and closes again; that screen is see-through and lets your taps through, " +
-        "so you keep using what you had open. Nothing opens while the phone is locked or the screen is off, " +
+        "When you next unlock the phone and today's check-in isn't done, ROX opens its own screen, presses " +
+        "Check-in and closes it again, usually within a few seconds and after two minutes at the most. On " +
+        "Android 11 and later that screen is fully transparent and taps go through it to the app below, but " +
+        "the Back button and the keyboard reach ROX until it closes; where Android won't make it transparent, " +
+        "ROX shows for that moment. Nothing opens while the phone is locked or the screen is off, " +
         "and it tries once a day. ROX needs \"Appear on top\" to open itself; while it is off, a " +
         "notification asks you to turn it on. A notification says when it worked, or asks you to tap " +
         "it if it couldn't; the next time you open ROX a short message also says what the last " +

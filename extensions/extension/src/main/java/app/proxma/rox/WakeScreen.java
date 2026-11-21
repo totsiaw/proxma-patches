@@ -56,6 +56,8 @@ final class WakeScreen {
     // How long after asking the start is checked, and the result recorded if the screen didn't open.
     static final long BACKUP_NOTICE_MS = 20_000L;
     private static final long ASK_EVERY_MS = 3L * 24L * 60L * 60L * 1000L;
+    // Longest the check-in screen stays open: just past the session's own 120 s timeout.
+    private static final long MAX_OPEN_MS = 125_000L;
 
     private static final Handler sHandler = new Handler(Looper.getMainLooper());
     private static WeakReference<Activity> sWoken = new WeakReference<>(null);
@@ -344,12 +346,28 @@ final class WakeScreen {
                 boolean hidden = hide(activity);
                 Log.i(TAG, "WAKE screen opened by the background run (" + how + "), phone in use, "
                     + (hidden ? "made see-through" : "couldn't make it see-through, shown as is"));
+                capOpen(activity);
             }
         } catch (Throwable t) {
             Log.w(TAG, "WAKE_TAKE_ERR " + t);
         } finally {
             prefs.edit().putLong(KEY_OPENED_AT, now).commit();
         }
+    }
+
+    /**
+     * Backstop: the check-in session closes the screen as soon as its result is known (after 4 s
+     * on a success, so the request can finish, 1.5 s otherwise) and times out after 120 s. Should
+     * no session ever start on it, the screen is closed here at the latest.
+     */
+    private static void capOpen(final Activity activity) {
+        sHandler.postDelayed(new Runnable() {
+            @Override public void run() {
+                if (!woken(activity) || closing(activity)) return;
+                Log.w(TAG, "WAKE check-in screen still open after " + (MAX_OPEN_MS / 1000L) + "s, closing it");
+                close(activity, 0L);
+            }
+        }, MAX_OPEN_MS);
     }
 
     static boolean woken(Activity activity) {
@@ -388,10 +406,12 @@ final class WakeScreen {
     }
 
     /**
-     * Makes the check-in screen see-through and lets touches go to the app behind it. Flutter keeps
-     * drawing and its semantics tree keeps working, because the screen is still resumed and on
-     * screen (alpha just above zero, so the system still counts it as shown). Only when Android
-     * agrees to make the screen translucent; otherwise it stays as in r32.
+     * Makes the check-in screen fully transparent and lets touches go to the app behind it. Flutter
+     * keeps drawing and its semantics tree keeps working, because the screen is still resumed and
+     * on screen; window alpha does not change that. The alpha must be exactly 0: since Android 12 a
+     * touch that passes through another app's window is dropped unless that window is
+     * FLAG_NOT_TOUCHABLE with alpha 0 (r37 used 0.01, which swallowed the user's taps for the whole
+     * session). Only when Android agrees to make the screen translucent; otherwise it stays as in r32.
      */
     private static boolean hide(Activity activity) {
         try {
@@ -403,7 +423,7 @@ final class WakeScreen {
             Window window = activity.getWindow();
             window.setBackgroundDrawable(new ColorDrawable(0));
             WindowManager.LayoutParams params = window.getAttributes();
-            params.alpha = 0.01f;
+            params.alpha = 0f;
             params.dimAmount = 0f;
             window.setAttributes(params);
             window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
@@ -422,21 +442,23 @@ final class WakeScreen {
 
     /**
      * A see-through check-in screen that goes away before it is done (the user switched app, a
-     * call came in) is made a normal screen again, so ROX is never left invisible.
+     * call came in) is closed, so ROX is never left invisible. It is never made visible or
+     * touchable again: its alpha stays 0 until it is gone. Normally the session's end has already
+     * closed it by the time this runs (the pause ends the session first).
      */
     static void reveal(Activity activity) {
         if (!hidden(activity)) return;
-        // Closing after the check-in also pauses it: keep it see-through on the way out.
+        // Closing after the check-in also pauses it: nothing more to do.
         if (activity.isFinishing() || closing(activity)) return;
+        Log.i(TAG, "WAKE see-through screen went away early with no session closing it, closing it");
+        if (woken(activity)) {
+            close(activity, 0L);
+            return;
+        }
         sHidden = new WeakReference<>(null);
         try {
-            Window window = activity.getWindow();
-            window.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE);
-            WindowManager.LayoutParams params = window.getAttributes();
-            params.alpha = 1f;
-            window.setAttributes(params);
-            if (Build.VERSION.SDK_INT >= 30) activity.setTranslucent(false);
-            Log.i(TAG, "WAKE see-through screen made normal again");
+            activity.finishAndRemoveTask();
+            noAnimation(activity);
         } catch (Throwable t) {
             Log.w(TAG, "WAKE_REVEAL_ERR " + t);
         }

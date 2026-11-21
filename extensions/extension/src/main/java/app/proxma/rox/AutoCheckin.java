@@ -372,7 +372,7 @@ public final class AutoCheckin {
             // Ending a check-in screen's session closes that screen; doing it first keeps it
             // see-through on the way out (reveal skips a closing screen).
             if (sSession != null && sSession.host.owns(activity)) sSession.end("paused", false);
-            // A see-through screen that goes away early and isn't closing becomes a normal screen again.
+            // A see-through screen that goes away early and isn't closing yet is closed (never shown).
             WakeScreen.reveal(activity);
         }
 
