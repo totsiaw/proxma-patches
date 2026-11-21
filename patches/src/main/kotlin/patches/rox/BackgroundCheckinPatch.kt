@@ -128,6 +128,7 @@ val backgroundCheckinPatch = bytecodePatch(
         "it if it couldn't; the next time you open ROX a short message also says what the last " +
         "background try did. You must be signed in, and ROX must have been opened once after installing. " +
         "Force-stopping ROX stops it until the next time you open the app.",
+    default = false,
 ) {
     compatibleWith(COMPATIBILITY_ROX)
     extendWith("extensions/extension.mpe")
