@@ -7,7 +7,7 @@ import app.morphe.patcher.patch.Compatibility
 internal val COMPATIBILITY_INDRIVE = Compatibility(
     name = "inDrive",
     packageName = "sinet.startup.inDriver",
-    apkFileType = ApkFileType.APK_REQUIRED,
+    apkFileType = ApkFileType.APKM,
     appIconColor = 0xC1F11D,
     signatures = emptySet(),
     targets = listOf(
